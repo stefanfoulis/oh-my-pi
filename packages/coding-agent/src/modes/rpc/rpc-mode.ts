@@ -76,6 +76,7 @@ import type {
 	RpcSessionState,
 	RpcSubagentSubscriptionLevel,
 } from "./rpc-types";
+import { isRpcAskDialogEnabled, requestRpcAskDialog } from "./rpc-ask-dialog";
 
 // Re-export types for consumers
 export type * from "./rpc-types";
@@ -1007,6 +1008,13 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 
 		setEditorComponent(): void {
 			// Custom editor components not supported in RPC mode
+		}
+
+		get askDialog(): ExtensionUIContext["askDialog"] {
+			return isRpcAskDialogEnabled()
+				? (questions, dialogOptions) =>
+						requestRpcAskDialog(this.pendingRequests, this.output, questions, dialogOptions)
+				: undefined;
 		}
 	}
 

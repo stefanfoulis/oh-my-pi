@@ -16,6 +16,7 @@ import type { AgentProgress } from "@oh-my-pi/pi-tui/tools/task";
 import type { SubagentEventPayload, SubagentLifecyclePayload, SubagentProgressPayload } from "../../task";
 import type { TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
 import type { RpcMessagesPage } from "./rpc-messages";
+import type { ExtensionAskDialogQuestion } from "@oh-my-pi/pi-tui/overlays/ask-dialog";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -527,6 +528,13 @@ export type RpcExtensionUIRequest =
 			 */
 			launchUrl?: string;
 			instructions?: string;
+	  }
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "ask";
+			questions: ExtensionAskDialogQuestion[];
+			timeout?: number;
 	  };
 
 // ============================================================================
@@ -639,7 +647,13 @@ export interface RpcHostUriResult {
 export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
-	| { type: "extension_ui_response"; id: string; cancelled: true; timedOut?: boolean };
+	| { type: "extension_ui_response"; id: string; cancelled: true; timedOut?: boolean }
+	| {
+			type: "extension_ui_response";
+			id: string;
+			results: Array<{ id: string; selectedOptions: string[]; customInput?: string; note?: string }>;
+	  }
+	| { type: "extension_ui_response"; id: string; chat: true };
 
 // ============================================================================
 // Helper type for extracting command types

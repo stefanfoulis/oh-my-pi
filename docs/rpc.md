@@ -712,6 +712,46 @@ Example:
 
 If a dialog has a timeout, RPC mode resolves to a default value when timeout/abort fires.
 
+### `ask` (opt-in)
+
+Set env `OMP_RPC_ASK_DIALOG=1` (also accepts `true`/`yes`/`on`) to let the `ask`
+tool emit a single richer frame per call instead of the plain `select`/`editor`
+frames above. Without the env var, `ask` keeps using `select`/`editor` and this
+method is never emitted.
+
+Outbound request (`RpcExtensionUIRequest`, `method: "ask"`):
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "123",
+  "method": "ask",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Which storage backend?",
+      "header": "Storage",
+      "options": [{ "label": "SQLite" }, { "label": "PostgreSQL", "description": "networked" }],
+      "multi": false,
+      "recommended": 0
+    }
+  ],
+  "timeout": 30000
+}
+```
+
+`timeout` is present only when the `ask` tool's configured timeout is greater
+than zero. Reply with one of:
+
+- `{ type: "extension_ui_response", id: string, results: [{ id: string, selectedOptions: string[], customInput?: string, note?: string }] }` —
+  one entry per question, in the same order, with matching `id`s.
+- `{ type: "extension_ui_response", id: string, chat: true }` — the user chose to chat about the question instead of answering.
+- `{ type: "extension_ui_response", id: string, cancelled: true, timedOut?: boolean }` — same cancellation shape as `select`/`confirm`/`input`.
+
+If the request's own timeout fires first, RPC mode emits a `cancel` frame and
+resolves the tool call with each question's recommended (else first, else no)
+option marked `timedOut: true`, without waiting on a reply.
+
 ## Host Tool Sub-Protocol
 
 RPC hosts can expose custom tools to the agent by sending `set_host_tools`, then
