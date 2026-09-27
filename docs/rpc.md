@@ -869,7 +869,8 @@ Example:
 - `{ type: "extension_ui_response", id: string, cancelled: true, timedOut?: boolean }`
 - `{ type: "extension_ui_response", id: string, answers: Array<{ id: string, selectedOptions: string[], customInput?: string }> }` (answers an `ask` request)
 
-If a dialog has a timeout, RPC mode resolves to a default value when timeout/abort fires. For `ask`, a timeout
+If a dialog has a timeout, RPC mode resolves to a default value when timeout/abort fires, and emits
+`{ method: "cancel", targetId }` so the host closes the dialog; a later answer to it is ignored. For `ask`, a timeout
 (omp's timer or a host `cancelled: true, timedOut: true` reply) answers every question with its recommended
 option, else its first.
 
