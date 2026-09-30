@@ -867,7 +867,8 @@ Example:
 - `{ type: "extension_ui_response", id: string, value: string }`
 - `{ type: "extension_ui_response", id: string, confirmed: boolean }`
 - `{ type: "extension_ui_response", id: string, cancelled: true, timedOut?: boolean }`
-- `{ type: "extension_ui_response", id: string, answers: Array<{ id: string, selectedOptions: string[], customInput?: string }> }` (answers an `ask` request)
+- `{ type: "extension_ui_response", id: string, answers: Array<{ id: string, selectedOptions: string[], customInput?: string, note?: string }> }` (answers an `ask` request)
+- `{ type: "extension_ui_response", id: string, chat: true }` (user chose "Chat about this" instead of answering an `ask` request)
 
 If a dialog has a timeout, RPC mode resolves to a default value when timeout/abort fires, and emits
 `{ method: "cancel", targetId }` so the host closes the dialog; a later answer to it is ignored. For `ask`, a timeout
@@ -877,7 +878,9 @@ option, else its first.
 `answers` must list one entry per question in request order, with each `id` equal to that question's `id`.
 `selectedOptions` holds exact option labels without duplicates; a multi-select may be empty. A single-select
 (`multi` absent or false) takes at most one option and not both an option and `customInput`. `customInput`
-is trimmed and ignored when empty. Any other shape fails the `ask` tool call instead of guessing.
+is trimmed and ignored when empty. `note` is an optional free-text annotation on that answer; it is trimmed,
+dropped when blank, and dropped when the answer has no `selectedOptions` and no `customInput`. Any other
+shape fails the `ask` tool call instead of guessing.
 
 ```json
 {

@@ -701,8 +701,10 @@ export type RpcExtensionUIResponse =
 	| {
 			type: "extension_ui_response";
 			id: string;
-			answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }>;
-	  };
+			answers: Array<{ id: string; selectedOptions: string[]; customInput?: string; note?: string }>;
+	  }
+	/** The user chose "Chat about this" instead of answering an `ask` request. */
+	| { type: "extension_ui_response"; id: string; chat: true };
 
 // ============================================================================
 // Helper type for extracting command types
