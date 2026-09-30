@@ -24,7 +24,6 @@ import { clearPluginRootsAndCaches, resolveActiveProjectRegistryPath } from "../
 import {
 	type ExtensionAskDialogQuestion,
 	type ExtensionAskDialogResult,
-	type ExtensionAskDialogSubmitResult,
 	type ExtensionUIContext,
 	type ExtensionUIDialogOptions,
 	type ExtensionUISelectItem,
@@ -1108,10 +1107,13 @@ function parseAskDialogResponse(
 	response: RpcExtensionUIResponse,
 	questions: ExtensionAskDialogQuestion[],
 	dialogOptions: ExtensionUIDialogOptions,
-): ExtensionAskDialogSubmitResult | undefined {
+): ExtensionAskDialogResult | undefined {
 	if ("cancelled" in response && response.cancelled) {
 		if (response.timedOut) dialogOptions.onTimeout?.();
 		return undefined;
+	}
+	if ("chat" in response && response.chat) {
+		return { kind: "chat" };
 	}
 	const answers: unknown = "answers" in response ? response.answers : undefined;
 	if (!Array.isArray(answers) || answers.length !== questions.length) {
@@ -1126,7 +1128,7 @@ function parseAskDialogResponse(
 			}
 			const labels = question.options.map(option => option.label);
 			const multi = question.multi ?? false;
-			const { selectedOptions, customInput } = answer;
+			const { selectedOptions, customInput, note: rawNote } = answer;
 			if (!Array.isArray(selectedOptions)) {
 				throw new Error(`Ask dialog answer ${JSON.stringify(question.id)} must carry a selectedOptions array`);
 			}
@@ -1153,6 +1155,11 @@ function parseAskDialogResponse(
 					`Ask dialog answer ${JSON.stringify(question.id)} is single-select but carries more than one answer`,
 				);
 			}
+			if (rawNote !== undefined && typeof rawNote !== "string") {
+				throw new Error(`Ask dialog answer ${JSON.stringify(question.id)} note must be a string`);
+			}
+			const trimmedNote = typeof rawNote === "string" ? rawNote.trim() || undefined : undefined;
+			const note = selected.length === 0 && custom === undefined ? undefined : trimmedNote;
 			return {
 				id: question.id,
 				question: question.question,
@@ -1160,6 +1167,7 @@ function parseAskDialogResponse(
 				multi,
 				selectedOptions: selected,
 				customInput: custom,
+				note,
 			};
 		}),
 	};
