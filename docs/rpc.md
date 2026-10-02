@@ -131,6 +131,7 @@ Important edge behavior from runtime:
 - `{ id?, type: "prompt", message: string, images?: ImageContent[], streamingBehavior?: "steer" | "followUp" }`
 - `{ id?, type: "steer", message: string, images?: ImageContent[] }`
 - `{ id?, type: "follow_up", message: string, images?: ImageContent[] }`
+- `{ id?, type: "continue" }`
 - `{ id?, type: "remove_queued_message", message: string, queue: "steering" | "followUp" }`
 - `{ id?, type: "promote_queued_message", message: string }`
 - `{ id?, type: "abort" }`
@@ -367,6 +368,20 @@ Data payloads are command-specific and defined in `rpc-types.ts`.
 A failed provider turn is not a failed command: the prompt response is still `success: true`, and the turn ends with a normal terminal `agent_end` whose last assistant message has `stopReason: "error"`. Use `prompt_result.status` rather than parsing that message.
 
 Local-only slash commands may emit `command_output` frames before completing. They do not emit `agent_end`.
+
+### `continue` payload
+
+`continue` asks the agent to act on the advisor cards already in its context, without a visible user message: weigh them as advice, address what is valid, say briefly what was set aside, then resume. Use it after advisory notes were preserved as visible cards following a terminal answer (see [Advisor watchdog](advisor-watchdog.md)); the cards are already in the model's context, so the host does not resend their text. Plain resumption of the last intent is the terminal's `.`/`c` shortcut and has no RPC command.
+
+The directive is delivered as a **synthetic** prompt: a hidden `role: "developer"` message with `synthetic: true` (and `userInitiated: true` when it starts the turn), so hosts should render it as a muted resume marker rather than a user bubble. Delivery depends on the session state at dispatch:
+
+- **Idle**: starts a turn and is reported exactly like a `prompt` — immediate `success: true` response, then one `prompt_result` with the same `id` when the agent yields.
+- **Streaming**: queued as a synthetic follow-up behind the running turn (it never steers or interrupts it), and its `prompt_result` arrives at the first yield after the directive left the queue.
+
+```json
+{"id":"req_7","type":"continue"}
+{"id":"req_7","type":"response","command":"continue","success":true}
+```
 
 ### Yield vs settled
 

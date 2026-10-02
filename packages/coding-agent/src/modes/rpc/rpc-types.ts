@@ -55,6 +55,13 @@ export type RpcCommand =
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
+	/**
+	 * Ask the agent to act on the advisor cards already in its context, with a
+	 * hidden directive instead of a visible user message. Idle starts a turn and
+	 * reports through `prompt_result`; a streaming turn gets it as a synthetic
+	 * follow-up.
+	 */
+	| { id?: string; type: "continue" }
 	| { id?: string; type: "remove_queued_message"; message: string; queue: "steering" | "followUp" }
 	| { id?: string; type: "promote_queued_message"; message: string }
 	| { id?: string; type: "abort" }
@@ -443,6 +450,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "prompt"; success: true; data?: { agentInvoked: boolean } }
 	| { id?: string; type: "response"; command: "steer"; success: true }
 	| { id?: string; type: "response"; command: "follow_up"; success: true }
+	| { id?: string; type: "response"; command: "continue"; success: true }
 	| {
 			id?: string;
 			type: "response";

@@ -13,7 +13,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
+import { AgentBusyError, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { Model } from "@oh-my-pi/pi-ai";
 import { getOAuthProviders } from "@oh-my-pi/pi-ai/oauth";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
@@ -52,6 +52,7 @@ import {
 	type SkillPromptInput,
 	type SkillRediscoverySource,
 } from "../../extensibility/skills";
+import advisorContinuePrompt from "../../prompts/system/advisor-continue.md" with { type: "text" };
 import { type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import { AgentLifecycleManager } from "../../registry/agent-lifecycle";
 import {
@@ -2234,6 +2235,41 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			case "follow_up": {
 				await dispatchOrderedUserInput(command, undefined);
 				return success(id, command.type);
+			}
+
+			case "continue": {
+				// Hidden developer directive: the host resumes the agent without creating a
+				// visible user message. Idle runs through the prompt ticket machinery so the
+				// host gets the same response and `prompt_result` frames as a `prompt`. A live
+				// turn takes it as a synthetic follow-up instead: the user-message queue only
+				// carries user-attributed messages and would demote the developer directive to
+				// a visible user turn.
+				watchAndReportPromptResult({
+					ticket: promptResults.begin(id),
+					startPrompt: async () => {
+						if (!session.isStreaming) {
+							try {
+								return await session.prompt(advisorContinuePrompt, {
+									synthetic: true,
+									userInitiated: true,
+									expandPromptTemplates: false,
+								});
+							} catch (busyError) {
+								// A turn started between the check and dispatch.
+								if (!(busyError instanceof AgentBusyError)) throw busyError;
+							}
+						}
+						await session.followUp(advisorContinuePrompt, undefined, {
+							synthetic: true,
+							expandPromptTemplates: false,
+						});
+						return true;
+					},
+					results: promptResults,
+					onError: onPromptError(id, "continue"),
+					extensionUserMessageTracker,
+				});
+				return success(id, "continue");
 			}
 
 			case "remove_queued_message": {

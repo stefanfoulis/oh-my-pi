@@ -31,6 +31,7 @@
 - The `devin-cli` login imports Devin CLI credentials into a stored `devin` account, so the provider no longer requires `DEVIN_API_KEY` ([#13637](https://github.com/can1357/oh-my-pi/pull/13637) by [@pavel-kalmykov](https://github.com/pavel-kalmykov))
 - The `devin-windsurf` login lets Windsurf Enterprise users authenticate the `devin` provider with their existing Windsurf account ([#13288](https://github.com/can1357/oh-my-pi/pull/13288) by [@pavel-kalmykov](https://github.com/pavel-kalmykov))
 - The RPC `ask` dialog's `answers` response can carry an optional `note` per answer, and hosts can reply `{ chat: true }` to redirect the `ask` tool into a chat instead of answering, extending the #13551 `set_ask_dialog` protocol.
+- RPC hosts can resume the agent on the advisor notes preserved as cards with the new `continue` command, without pasting text: it is delivered as a hidden synthetic prompt, started immediately when idle and queued as a follow-up while a turn is streaming
 
 ### Fixed
 
