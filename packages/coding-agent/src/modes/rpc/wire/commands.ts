@@ -48,6 +48,11 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 	{ name: "steer", doc: "Queue a steering message.", params: { message: "string", "images?": IMAGES } },
 	{ name: "follow_up", doc: "Queue a follow-up message.", params: { message: "string", "images?": IMAGES } },
 	{
+		name: "continue",
+		doc: "Resume the agent on the advisor cards already in its context, with a hidden directive instead of a visible user message; completed by its `prompt_result`.",
+		completion: "prompt_result",
+	},
+	{
 		name: "remove_queued_message",
 		doc: "Remove one pending queued message by its queue-chip text.",
 		params: { message: "string", queue: "QueuedMessageQueue" },

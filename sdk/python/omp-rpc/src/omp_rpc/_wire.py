@@ -3669,6 +3669,11 @@ class WireClient:
             params["images"] = list(images)
         self._command("follow_up", params)
 
+    def continue_(self) -> None:
+        """Resume the agent on the advisor cards already in its context, with a hidden directive instead of a visible user message; completed by its `prompt_result`."""
+        params: dict[str, object] = {}
+        self._command("continue", params)
+
     def remove_queued_message(self, message: str, queue: QueuedMessageQueue) -> RemoveQueuedMessageResult:
         """Remove one pending queued message by its queue-chip text."""
         params: dict[str, object] = {}

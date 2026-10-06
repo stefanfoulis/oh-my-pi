@@ -8444,6 +8444,12 @@ func (c Commands) FollowUp(ctx context.Context, p FollowUpCommand) error {
 	return c.call(ctx, "follow_up", p, 0, nil)
 }
 
+// Continue sends "continue": Resume the agent on the advisor cards already in its context, with a hidden directive instead of a visible user message; completed by its `prompt_result`.
+// Its work completes later with a prompt_result frame carrying the request id (see WithRequestID).
+func (c Commands) Continue(ctx context.Context) error {
+	return c.call(ctx, "continue", nil, 0, nil)
+}
+
 // RemoveQueuedMessageCommand holds the parameters of "remove_queued_message".
 type RemoveQueuedMessageCommand struct {
 	Message string             `json:"message"`

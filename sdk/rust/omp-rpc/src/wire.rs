@@ -6530,6 +6530,24 @@ impl Command for FollowUpCommand {
 	}
 }
 
+/// Resume the agent on the advisor cards already in its context, with a hidden directive instead of a visible user message; completed by its `prompt_result`.
+///
+/// The returned value is only the acknowledgement: the work completes with a
+/// `prompt_result` notification carrying this command's id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ContinueCommand {}
+
+impl Command for ContinueCommand {
+	const NAME: &'static str = "continue";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = ();
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		let _ = data;
+		Ok(())
+	}
+}
+
 /// Remove one pending queued message by its queue-chip text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoveQueuedMessageCommand {

@@ -2071,6 +2071,7 @@ export interface RpcWireCommands {
 	prompt: { params: PromptParams; result: PromptAck };
 	steer: { params: SteerParams; result: undefined };
 	follow_up: { params: FollowUpParams; result: undefined };
+	continue: { params: undefined; result: undefined };
 	remove_queued_message: { params: RemoveQueuedMessageParams; result: RemoveQueuedMessageResult };
 	promote_queued_message: { params: PromoteQueuedMessageParams; result: PromoteQueuedMessageResult };
 	abort: { params: undefined; result: undefined };

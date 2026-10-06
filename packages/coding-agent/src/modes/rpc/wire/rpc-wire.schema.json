@@ -54,6 +54,17 @@
 				"clientOmit": []
 			},
 			{
+				"name": "continue",
+				"doc": "Resume the agent on the advisor cards already in its context, with a hidden directive instead of a visible user message; completed by its `prompt_result`.",
+				"params": null,
+				"result": null,
+				"nullable": false,
+				"unwrap": null,
+				"timeoutMs": null,
+				"completion": "prompt_result",
+				"clientOmit": []
+			},
+			{
 				"name": "remove_queued_message",
 				"doc": "Remove one pending queued message by its queue-chip text.",
 				"params": "RemoveQueuedMessageParams",

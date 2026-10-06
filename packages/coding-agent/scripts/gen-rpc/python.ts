@@ -595,8 +595,11 @@ class PythonEmitter {
 		const timeout = command.timeoutMs === null ? "" : `, timeout=${command.timeoutMs / 1000}`;
 		const call = `self._command(${pyString(command.name)}, params${timeout})`;
 		const { returns, statement } = this.#commandResult(command, call);
+		// A command named like a Python keyword (`continue`) takes the trailing
+		// underscore the fields use; the wire name stays in the `_command` call.
+		const method = PYTHON_KEYWORDS.has(command.name) ? `${command.name}_` : command.name;
 		const lines = [
-			`    def ${command.name}(${signature.join(", ")}) -> ${returns}:\n`,
+			`    def ${method}(${signature.join(", ")}) -> ${returns}:\n`,
 			docstring(command.doc, "        "),
 			"        params: dict[str, object] = {}\n",
 			...body,
