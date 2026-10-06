@@ -1396,6 +1396,8 @@ export interface AskAnswer {
 	id: string;
 	selectedOptions: string[];
 	customInput?: string;
+	/** Free-text annotation; dropped when blank or when the answer carries no choice at all. */
+	note?: string;
 }
 
 /** Answers a `select`, `input`, or `editor` request. */
@@ -1427,8 +1429,15 @@ export interface AnswersUiResponse {
 	answers: AskAnswer[];
 }
 
+/** Leaves an `ask` request unanswered: the user chose "Chat about this" instead. */
+export interface ChatUiResponse {
+	type: "extension_ui_response";
+	id: string;
+	chat: true;
+}
+
 /** Host reply to an extension UI request; variants share `type` and differ by their payload key. */
-export type ExtensionUiResponse = ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse;
+export type ExtensionUiResponse = ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse | ChatUiResponse;
 
 export interface HostToolCallRequest {
 	type: "host_tool_call";

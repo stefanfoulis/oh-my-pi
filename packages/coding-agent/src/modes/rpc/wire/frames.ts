@@ -238,7 +238,15 @@ export const frameDefs = {
 		"Extension UI request, discriminated by `method`.",
 	),
 	AskAnswer: doc(
-		{ id: "string", selectedOptions: "string[]", "customInput?": "string" },
+		{
+			id: "string",
+			selectedOptions: "string[]",
+			"customInput?": "string",
+			"note?": doc(
+				"string",
+				"Free-text annotation; dropped when blank or when the answer carries no choice at all.",
+			),
+		},
 		"Answer to one `ask` question: exact option labels, plus optional free text.",
 	),
 	ValueUiResponse: doc(
@@ -257,8 +265,12 @@ export const frameDefs = {
 		{ type: "'extension_ui_response'", id: "string", answers: "AskAnswer[]" },
 		"Answers an `ask` request: one `AskAnswer` per question, in question order.",
 	),
+	ChatUiResponse: doc(
+		{ type: "'extension_ui_response'", id: "string", chat: "true" },
+		'Leaves an `ask` request unanswered: the user chose "Chat about this" instead.',
+	),
 	ExtensionUiResponse: doc(
-		"ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse",
+		"ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse | ChatUiResponse",
 		"Host reply to an extension UI request; variants share `type` and differ by their payload key.",
 	),
 

@@ -5578,6 +5578,10 @@
 				},
 				"customInput": {
 					"type": "string"
+				},
+				"note": {
+					"type": "string",
+					"description": "Free-text annotation; dropped when blank or when the answer carries no choice at all."
 				}
 			},
 			"required": [
@@ -5672,6 +5676,26 @@
 			],
 			"description": "Answers an `ask` request: one `AskAnswer` per question, in question order."
 		},
+		"ChatUiResponse": {
+			"type": "object",
+			"properties": {
+				"type": {
+					"const": "extension_ui_response"
+				},
+				"id": {
+					"type": "string"
+				},
+				"chat": {
+					"const": true
+				}
+			},
+			"required": [
+				"type",
+				"id",
+				"chat"
+			],
+			"description": "Leaves an `ask` request unanswered: the user chose \"Chat about this\" instead."
+		},
 		"ExtensionUiResponse": {
 			"anyOf": [
 				{
@@ -5685,6 +5709,9 @@
 				},
 				{
 					"$ref": "#/$defs/AnswersUiResponse"
+				},
+				{
+					"$ref": "#/$defs/ChatUiResponse"
 				}
 			],
 			"description": "Host reply to an extension UI request; variants share `type` and differ by their payload key."

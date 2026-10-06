@@ -4716,6 +4716,9 @@ pub struct AskAnswer {
 	pub selected_options: Vec<String>,
 	#[serde(rename = "customInput", default, skip_serializing_if = "Option::is_none")]
 	pub custom_input: Option<String>,
+	/// Free-text annotation; dropped when blank or when the answer carries no choice at all.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub note: Option<String>,
 }
 
 /// Answers a `select`, `input`, or `editor` request.
@@ -4748,6 +4751,13 @@ pub struct AnswersUiResponse {
 	pub answers: Vec<AskAnswer>,
 }
 
+/// Leaves an `ask` request unanswered: the user chose "Chat about this" instead.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatUiResponse {
+	pub id: String,
+	pub chat: LitTrue,
+}
+
 /// Host reply to an extension UI request; variants share `type` and differ by their payload key.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExtensionUiResponse {
@@ -4759,6 +4769,8 @@ pub enum ExtensionUiResponse {
 	CancelUiResponse(CancelUiResponse),
 	/// Answers an `ask` request: one `AskAnswer` per question, in question order.
 	AnswersUiResponse(AnswersUiResponse),
+	/// Leaves an `ask` request unanswered: the user chose "Chat about this" instead.
+	ChatUiResponse(ChatUiResponse),
 }
 
 impl ExtensionUiResponse {
@@ -4776,6 +4788,9 @@ impl ExtensionUiResponse {
 		if let Ok(member) = AnswersUiResponse::deserialize(&value) {
 			return Ok(Self::AnswersUiResponse(member));
 		}
+		if let Ok(member) = ChatUiResponse::deserialize(&value) {
+			return Ok(Self::ChatUiResponse(member));
+		}
 		Err(serde_json::Error::custom("no ExtensionUiResponse variant matches"))
 	}
 }
@@ -4787,6 +4802,7 @@ impl Serialize for ExtensionUiResponse {
 			Self::ConfirmUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
 			Self::CancelUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
 			Self::AnswersUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
+			Self::ChatUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
 		}
 	}
 }

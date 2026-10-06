@@ -6120,6 +6120,8 @@ type AskAnswer struct {
 	ID              string   `json:"id"`
 	SelectedOptions []string `json:"selectedOptions"`
 	CustomInput     *string  `json:"customInput,omitempty"`
+	// Free-text annotation; dropped when blank or when the answer carries no choice at all.
+	Note *string `json:"note,omitempty"`
 }
 
 func (v *AskAnswer) UnmarshalJSON(data []byte) error {
@@ -6132,6 +6134,7 @@ func (v *AskAnswer) decodeFrom(raw map[string]json.RawMessage) error {
 	d.required("id", &out.ID)
 	d.required("selectedOptions", &out.SelectedOptions)
 	d.optional("customInput", &out.CustomInput)
+	d.optional("note", &out.Note)
 	if d.err != nil {
 		return d.err
 	}
@@ -6252,6 +6255,33 @@ func (v AnswersUiResponse) MarshalJSON() ([]byte, error) {
 	return encodeObject(plain(v), `"type":"extension_ui_response"`, nil)
 }
 
+// Leaves an `ask` request unanswered: the user chose "Chat about this" instead.
+type ChatUiResponse struct {
+	ID string `json:"id"`
+}
+
+func (v *ChatUiResponse) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "ChatUiResponse", v.decodeFrom)
+}
+
+func (v *ChatUiResponse) decodeFrom(raw map[string]json.RawMessage) error {
+	var out ChatUiResponse
+	d := fieldDecoder{raw: raw, owner: "ChatUiResponse"}
+	d.constant("type", "extension_ui_response")
+	d.required("id", &out.ID)
+	d.constant("chat", true)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+func (v ChatUiResponse) MarshalJSON() ([]byte, error) {
+	type plain ChatUiResponse
+	return encodeObject(plain(v), `"type":"extension_ui_response","chat":true`, nil)
+}
+
 // Host reply to an extension UI request; variants share `type` and differ by their payload key.
 type ExtensionUiResponse struct {
 	// Value holds one variant. Encode-only: no discriminator tells the variants apart.
@@ -6267,6 +6297,7 @@ func (ValueUiResponse) isExtensionUiResponse()   {}
 func (ConfirmUiResponse) isExtensionUiResponse() {}
 func (CancelUiResponse) isExtensionUiResponse()  {}
 func (AnswersUiResponse) isExtensionUiResponse() {}
+func (ChatUiResponse) isExtensionUiResponse()    {}
 
 func (v ExtensionUiResponse) MarshalJSON() ([]byte, error) {
 	return encodeVariant("ExtensionUiResponse", v.Value)
@@ -6619,6 +6650,7 @@ func (ValueUiResponse) isRpcInbound()   {}
 func (ConfirmUiResponse) isRpcInbound() {}
 func (CancelUiResponse) isRpcInbound()  {}
 func (AnswersUiResponse) isRpcInbound() {}
+func (ChatUiResponse) isRpcInbound()    {}
 func (HostToolUpdate) isRpcInbound()    {}
 func (HostToolResult) isRpcInbound()    {}
 func (HostUriResult) isRpcInbound()     {}
