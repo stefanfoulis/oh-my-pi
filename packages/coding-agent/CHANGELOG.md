@@ -46,6 +46,7 @@
 - Added live visibility into output redirected to files by background bash jobs, including job streams, the jobs sheet, job widgets, and command cards; selecting a command shows the output for its relevant pipeline or redirected stream.
 - Added Binary Ninja as a disassembler backend for read analysis views and the `dsm` namespace. Select it with `disassembler.backend = binja` and configure its installation with `binja.installDir` or `$BN_INSTALL_DIR`.
 - Clicking the usage-limit segment in native terminal hosts such as Tern now opens `/usage`. Changing Tern's Agents tray setting immediately switches between tray cards and the running-agent and job counters without restarting omp.
+- Added `--fork-at <entryId>` beside `--fork`: the new session holds the source transcript only up to that entry (same cut as an in-session entry fork, extended through the tool results the source recorded). The source file is only read, so you can fork a session at any message while its own process keeps running.
 
 ### Changed
 

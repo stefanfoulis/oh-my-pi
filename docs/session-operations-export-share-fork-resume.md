@@ -31,6 +31,7 @@ This document describes operator-visible behavior for session export, sharing, c
 | `/fork`                                   | Interactive slash command    | Yes (active session identity changes)         | Creates new session file and switches current session to it (persistent mode only)                                                                                           | Copies artifact directory to new session namespace when present                     |
 | `/fork pane`, `/fork window`, `/fork tab` | Interactive slash command    | No (parent session retained)                  | Opens a child OMP process from the flushed current transcript in a multiplexer pane/group (tmux window, Zellij/Herdr/Orca tab, or CMUX workspace)                            | Child receives a separate forked session                                            |
 | `--fork <id\|path>`                       | CLI startup                  | Yes after session creation                    | Creates a new session fork from the selected source into current cwd/session dir                                                                                             | Copies source artifacts recursively by default                                      |
+| `--fork <id\|path> --fork-at <entryId>`   | CLI startup                  | No (source process untouched)                 | Creates a new session holding the source's root-to-entry path only, in current cwd/session dir                                                                               | Copies source artifacts recursively by default                                      |
 | `/resume [id\|@claude\|@codex]`           | Interactive slash command    | Yes (active in-memory state replaced)         | Switches to a selected/matched session, or imports a selected foreign session                                                                                                | None                                                                                |
 | `--resume`                                | CLI startup picker           | Yes after session creation                    | Opens selected existing session file (picker opens in current-folder scope; the global list is preloaded only for the empty-everything early exit and instant Tab switching) | None                                                                                |
 | `--resume <id\|path>`                     | CLI startup                  | Yes after session creation                    | Opens existing session; a missing recorded cwd may be re-rooted into the current directory (protocol modes open it in place, except a session from a removed worktree)       | None                                                                                |
@@ -409,6 +410,31 @@ Startup `--fork` is resolved before normal session creation:
 5. Full-context forks automatically seed `providerPromptCacheKey` from the source header's inherited key, falling back to the source session id. Startup drops that automatic inheritance for explicit `--model`, `--thinking`, `--system-prompt`, `--system-prompt-template`, `--append-system-prompt`, `--tools`, or `--no-tools` overrides, or an applicable scoped-model override.
 
 Use `--prompt-cache-key <key>` to pin the provider prompt-cache identity explicitly and independently from both the OMP session id and `--provider-session-id`. `--provider-session-id` continues to control provider session/routing headers and sticky credential selection; `--prompt-cache-key` controls the OpenAI Responses `prompt_cache_key` payload where supported.
+
+### CLI `--fork-at <entryId>`
+
+`--fork-at` narrows what `--fork` copies to the source's root-to-entry path,
+inclusive, applying the cut rules of RPC `fork` with `entryId`
+(`SessionManager.resolveForkLeaf`): a cut inside an assistant tool-call batch
+extends through the tool results the source recorded for that batch.
+
+- It requires `--fork`; alone it is a usage error (`--fork-at requires --fork <session>.`, exit 2),
+  as is an empty value.
+- `entryId` must name a `message` entry in the source. Anything else (an unknown
+  id, a `compaction`, `branch_summary`, or other non-message entry) fails session
+  resolution with `Entry "<id>" is not a message in session "<path>".` and exit 1.
+  In `--mode rpc`/`rpc-ui` this happens before the transport starts, so the host
+  sees the process exit with that message on stderr instead of a `ready` frame.
+- If the extended cut would still end on an assistant message whose tool calls
+  have no recorded results — the source is running them right now — the cut ends
+  before that assistant message instead. The fork cannot produce those results,
+  and must not claim the calls were abandoned.
+- The new header's `parentSession` is the absolute source *file*, as for an
+  in-process entry fork, not the source session id that a whole-session
+  `--fork` records. Artifacts are copied as for `--fork`.
+- The source file is only read. A fork may therefore be taken while the session's
+  own process keeps appending to it; a half-written trailing JSONL line is skipped
+  like any other malformed record.
 
 ## Resume and continue
 

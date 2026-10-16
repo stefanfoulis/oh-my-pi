@@ -925,6 +925,18 @@ export class ForkSourceNotFoundError extends Error {
 }
 
 /**
+ * Thrown by {@link SessionManager.forkFrom} when `leafEntryId` names no
+ * transcript message in the fork source. Mapped by the CLI like
+ * {@link ForkSourceNotFoundError}.
+ */
+export class ForkEntryNotFoundError extends Error {
+	constructor(entryId: string, sourcePath: string) {
+		super(`Entry "${entryId}" is not a message in session "${sourcePath}".`);
+		this.name = "ForkEntryNotFoundError";
+	}
+}
+
+/**
  * Stores and navigates an append-only conversation journal.
  *
  * A session is a JSONL file: one header line followed by entries. Entries form a
@@ -4169,14 +4181,11 @@ export class SessionManager {
 	}
 
 	/**
-	 * Create a new session file containing only the path from root to `leafId`.
-	 * With `copyArtifacts`, the source artifact directory is copied in the background;
-	 * the new spill manager waits for it before allocating ids or resolving
-	 * spills, so kept references stay valid and new ids cannot collide.
-	 * Returns the new file path, or undefined when not persisting.
+	 * The root-to-`leafId` entries a branch or fork keeps: the path itself with
+	 * its label entries dropped, followed by fresh label entries for the labels
+	 * still in effect on a kept target.
 	 */
-	createBranchedSession(leafId: string, options?: { copyArtifacts?: boolean }): string | undefined {
-		const sourceSessionFile = this.#sessionFile;
+	#branchEntries(leafId: string): SessionEntry[] {
 		const branchPath = this.getBranch(leafId);
 		if (branchPath.length === 0) throw new Error(`Entry ${leafId} not found`);
 
@@ -4189,10 +4198,90 @@ export class SessionManager {
 			entriesToKeep.push(entry.activeLeafId === undefined ? entry : { ...entry, activeLeafId: undefined });
 		}
 		const keptIds = new Set(entriesToKeep.map(entry => entry.id));
-		const labelsToCarry: Array<{ targetId: string; label: string }> = [];
+		const labels: LabelEntry[] = [];
+		let parentId = entriesToKeep[entriesToKeep.length - 1]?.id ?? null;
 		for (const [targetId, label] of this.#index.labelsInEffect()) {
-			if (keptIds.has(targetId)) labelsToCarry.push({ targetId, label });
+			if (!keptIds.has(targetId)) continue;
+			const labelEntry: LabelEntry = {
+				type: "label",
+				id: generateId(new Set([...keptIds, ...labels.map(entry => entry.id)])),
+				parentId,
+				timestamp: nowIso(),
+				runtime: currentRuntimeIdentity(),
+				targetId,
+				label,
+			};
+			labels.push(labelEntry);
+			parentId = labelEntry.id;
 		}
+		return [...entriesToKeep, ...labels];
+	}
+
+	/**
+	 * The last entry a fork at `entryId` keeps: `entryId` itself, extended through the
+	 * recorded tool results that answer the assistant tool-call batch it sits in, so a
+	 * fork never ends on tool calls whose results exist in the source session.
+	 * Non-message entries between results (labels, custom entries) are kept only when a
+	 * later result follows them.
+	 *
+	 * `dropUnansweredToolCalls` is for forks that cannot produce the missing results
+	 * themselves (a separate process forking a file another process is still writing):
+	 * when the extended cut would still end on an assistant message with unanswered tool
+	 * calls, it ends before that message instead, and returns null if nothing is left.
+	 */
+	resolveForkLeaf(entryId: string): string;
+	resolveForkLeaf(entryId: string, options: { dropUnansweredToolCalls: true }): string | null;
+	resolveForkLeaf(entryId: string, options?: { dropUnansweredToolCalls?: boolean }): string | null {
+		const answered = new Set<string>();
+		let batchEntry: SessionMessageEntry | undefined;
+		const branchPath = this.getBranch(entryId);
+		for (let index = branchPath.length - 1; index >= 0; index--) {
+			const entry = branchPath[index];
+			if (entry.type !== "message") continue;
+			if (entry.message.role === "toolResult") {
+				answered.add(entry.message.toolCallId);
+				continue;
+			}
+			if (entry.message.role === "assistant") batchEntry = entry;
+			break;
+		}
+		const batch = batchEntry?.message.role === "assistant" ? batchEntry.message : undefined;
+		const pending = new Set<string>();
+		for (const block of batch?.content ?? []) {
+			if (block.type === "toolCall" && !answered.has(block.id)) pending.add(block.id);
+		}
+
+		let leafId = entryId;
+		let cursor = entryId;
+		while (pending.size > 0) {
+			const children = this.getChildren(cursor);
+			const result = children.findLast(
+				child =>
+					child.type === "message" && child.message.role === "toolResult" && pending.has(child.message.toolCallId),
+			);
+			if (result?.type === "message" && result.message.role === "toolResult") {
+				pending.delete(result.message.toolCallId);
+				leafId = cursor = result.id;
+				continue;
+			}
+			// Step over a lone bookkeeping entry; any message or fork in the tree ends the batch.
+			if (children.length !== 1 || children[0].type === "message") break;
+			cursor = children[0].id;
+		}
+		if (pending.size > 0 && options?.dropUnansweredToolCalls && batchEntry) return batchEntry.parentId;
+		return leafId;
+	}
+
+	/**
+	 * Create a new session file containing only the path from root to `leafId`.
+	 * With `copyArtifacts`, the source artifact directory is copied in the background;
+	 * the new spill manager waits for it before allocating ids or resolving
+	 * spills, so kept references stay valid and new ids cannot collide.
+	 * Returns the new file path, or undefined when not persisting.
+	 */
+	createBranchedSession(leafId: string, options?: { copyArtifacts?: boolean }): string | undefined {
+		const sourceSessionFile = this.#sessionFile;
+		const branchedEntries = this.#branchEntries(leafId);
 
 		const timestamp = nowIso();
 		const newSessionId = mintSessionId();
@@ -4211,24 +4300,8 @@ export class SessionManager {
 			additionalDirectories: this.#additionalDirectories.length > 0 ? [...this.#additionalDirectories] : undefined,
 		};
 
-		const labels: LabelEntry[] = [];
-		let parentId = entriesToKeep[entriesToKeep.length - 1]?.id ?? null;
-		for (const carried of labelsToCarry) {
-			const labelEntry: LabelEntry = {
-				type: "label",
-				id: generateId(new Set([...keptIds, ...labels.map(entry => entry.id)])),
-				parentId,
-				timestamp: nowIso(),
-				runtime: currentRuntimeIdentity(),
-				targetId: carried.targetId,
-				label: carried.label,
-			};
-			labels.push(labelEntry);
-			parentId = labelEntry.id;
-		}
-
 		this.#header = header;
-		this.#entries = [...entriesToKeep, ...labels];
+		this.#entries = branchedEntries;
 		this.#sessionId = newSessionId;
 		this.#taskSiblingCandidate = undefined;
 		this.#sessionName = header.title;
@@ -4311,6 +4384,14 @@ export class SessionManager {
 	 * auto-named `<timestamp>_<id>.jsonl` in `sessionDir`). Artifacts are copied
 	 * recursively by default; nested agents that deliberately share their parent's
 	 * artifact root may disable this with `copyArtifacts: false`.
+	 *
+	 * `options.leafEntryId` forks a cut of the source instead of all of it: the new
+	 * session holds the root-to-entry path through that transcript message, extended
+	 * through the tool results the source recorded for it (see {@link resolveForkLeaf}),
+	 * and records the source *file* as its `parentSession` — the lineage an in-process
+	 * entry fork writes. The source is never written to, so the cut may be taken while
+	 * its own process keeps appending.
+	 * @throws ForkEntryNotFoundError when `leafEntryId` is no message in the source
 	 */
 	static async forkFrom(
 		sourcePath: string,
@@ -4323,6 +4404,7 @@ export class SessionManager {
 			sessionFile?: string;
 			resetInheritedCost?: boolean;
 			repairInterruptedTail?: boolean;
+			leafEntryId?: string;
 		},
 	): Promise<SessionManager> {
 		const dir = sessionDir ?? SessionManager.getDefaultSessionDir(cwd, undefined, storage);
@@ -4345,9 +4427,12 @@ export class SessionManager {
 		const history = sourceEntries.filter(entry => entry.type !== "session") as SessionEntry[];
 		normalizeLoadedUsage(history);
 		if (options?.resetInheritedCost) SessionManager.#resetInheritedUsageCost(history);
+		const leafEntryId = options?.leafEntryId;
 		manager.#resetToNewSession(
 			{
-				parentSession: sourceHeader?.id,
+				// An entry fork is a cut of one specific transcript file, and records it the
+				// way an in-process entry fork does; a whole-session fork records the id.
+				parentSession: leafEntryId === undefined ? sourceHeader?.id : path.resolve(sourcePath),
 				providerPromptCacheKey: SessionManager.getInheritedProviderPromptCacheKey(sourceHeader),
 				taskPromptCacheKey: sourceHeader?.taskPromptCacheKey,
 			},
@@ -4364,10 +4449,22 @@ export class SessionManager {
 		manager.#hasTitleSlot = true;
 		manager.#entries = history;
 		manager.#index.rebuild(history);
+		let entries = history;
+		if (leafEntryId !== undefined) {
+			if (manager.getEntry(leafEntryId)?.type !== "message") {
+				throw new ForkEntryNotFoundError(leafEntryId, sourcePath);
+			}
+			// The source may still be running, so its unanswered tool calls stay with it:
+			// this fork cannot produce their results and must not claim they were aborted.
+			const leafId = manager.resolveForkLeaf(leafEntryId, { dropUnansweredToolCalls: true });
+			entries = leafId === null ? [] : manager.#branchEntries(leafId);
+			manager.#entries = entries;
+			manager.#index.rebuild(entries);
+		}
 		manager.sanitizeLoadedOpenAIResponsesReplayMetadata();
 		if (options?.repairInterruptedTail) {
-			SessionManager.#repairForkedInterruptedTail(history, manager.#index.pathTo());
-			manager.#index.rebuild(history);
+			SessionManager.#repairForkedInterruptedTail(entries, manager.#index.pathTo());
+			manager.#index.rebuild(entries);
 		}
 		manager.#forceFileCreation = true;
 		await manager.#rewriteAtomically();

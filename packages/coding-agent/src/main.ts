@@ -130,7 +130,12 @@ import {
 	type SessionContinuation,
 	type SessionInfo,
 } from "./session/session-listing";
-import { ForkSourceNotFoundError, SessionManager, SessionMoveRefusedError } from "./session/session-manager";
+import {
+	ForkEntryNotFoundError,
+	ForkSourceNotFoundError,
+	SessionManager,
+	SessionMoveRefusedError,
+} from "./session/session-manager";
 import { forkIfMovedAway } from "./session/session-transfer";
 import { shouldShowStartupSplash } from "./startup-splash";
 import {
@@ -1297,15 +1302,16 @@ export async function createSessionManager(
 			throw new SessionResolutionError("--fork requires session persistence");
 		}
 		const forkSource = parsed.fork;
+		// The source file is only read, so --fork-at can cut a session another process is still writing.
+		const forkOptions = { repairInterruptedTail: true, leafEntryId: parsed.forkAt };
 		if (forkSource.includes("/") || forkSource.includes("\\") || forkSource.endsWith(".jsonl")) {
 			try {
-				return await SessionManager.forkFrom(forkSource, cwd, parsed.sessionDir, undefined, {
-					repairInterruptedTail: true,
-				});
+				return await SessionManager.forkFrom(forkSource, cwd, parsed.sessionDir, undefined, forkOptions);
 			} catch (err) {
 				if (err instanceof ForkSourceNotFoundError) {
 					throw new SessionResolutionError(err.message, SESSION_NOT_FOUND_HINT);
 				}
+				if (err instanceof ForkEntryNotFoundError) throw new SessionResolutionError(err.message);
 				throw err;
 			}
 		}
@@ -1314,13 +1320,12 @@ export async function createSessionManager(
 			throw new SessionResolutionError(`Session "${forkSource}" not found.`, SESSION_NOT_FOUND_HINT);
 		}
 		try {
-			return await SessionManager.forkFrom(match.session.path, cwd, parsed.sessionDir, undefined, {
-				repairInterruptedTail: true,
-			});
+			return await SessionManager.forkFrom(match.session.path, cwd, parsed.sessionDir, undefined, forkOptions);
 		} catch (err) {
 			if (err instanceof ForkSourceNotFoundError) {
 				throw new SessionResolutionError(`Session "${forkSource}" not found.`, SESSION_NOT_FOUND_HINT);
 			}
+			if (err instanceof ForkEntryNotFoundError) throw new SessionResolutionError(err.message);
 			throw err;
 		}
 	}
