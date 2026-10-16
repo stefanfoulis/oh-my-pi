@@ -152,6 +152,9 @@ export const STRING_SETTERS: Record<string, StringSetter> = {
 	"--fork": (result, value) => {
 		result.fork = value;
 	},
+	"--fork-at": (result, value) => {
+		result.forkAt = value;
+	},
 	"--provider": (result, value) => {
 		result.provider = value;
 	},
@@ -439,6 +442,7 @@ const ONE_SHOT_LAUNCH_FLAGS: Readonly<Record<string, true>> = {
 	"--continue": true,
 	"-c": true,
 	"--fork": true,
+	"--fork-at": true,
 	"--from-claude": true,
 	"--from-codex": true,
 	"--goal": true,

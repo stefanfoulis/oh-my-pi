@@ -68,6 +68,10 @@ export const launchHelp = {
 			description:
 				"Resume a session as --resume does, then go on with what its last process left unfinished (the interrupted turn and the subagents it was running)",
 		}),
+		"fork-at": Flags.string({
+			description:
+				"With --fork <session>: copy the source transcript only up to this entry id, without writing to the source",
+		}),
 		"from-claude": Flags.boolean({ description: "Import a Claude Code session into OMP" }),
 		"from-codex": Flags.boolean({ description: "Import a Codex session into OMP" }),
 		"session-dir": Flags.string({ description: "Directory for session storage and lookup" }),

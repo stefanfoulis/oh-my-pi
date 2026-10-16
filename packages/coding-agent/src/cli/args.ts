@@ -75,6 +75,8 @@ export interface Args {
 	providerSessionId?: string;
 	providerPromptCacheKey?: string;
 	fork?: string;
+	/** `--fork-at <entryId>`: fork only the source transcript up to that entry. Requires {@link fork}. */
+	forkAt?: string;
 	/** Collab link to join at startup (set by the `join` subcommand; no CLI flag). */
 	join?: string;
 	models?: string[];
@@ -462,6 +464,14 @@ export function parseArgs(inputArgs: string[], extensionFlags?: Map<string, { ty
 
 	if (result.systemPrompt !== undefined && result.systemPromptTemplate !== undefined) {
 		throw new CliUsageError("--system-prompt and --system-prompt-template cannot be combined");
+	}
+
+	// --fork-at only narrows the transcript --fork copies; alone it names an entry in no session.
+	if (result.forkAt !== undefined && result.fork === undefined) {
+		throw new CliUsageError("--fork-at requires --fork <session>.");
+	}
+	if (result.forkAt !== undefined && result.forkAt.trim().length === 0) {
+		throw new CliUsageError("--fork-at requires an entry id.");
 	}
 	return result;
 }
