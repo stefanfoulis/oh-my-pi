@@ -318,6 +318,58 @@ describe("createSessionManager — missing session (#2084)", () => {
 		},
 	);
 
+	it("cuts a CLI --fork at --fork-at and leaves the source file untouched", async () => {
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-at-cli-"));
+		const sessionDir = path.join(cwd, "sessions");
+		const source = path.join(sessionDir, "source.jsonl");
+		const id = "019ea530-0000-7000-0000-000000000001";
+		const timestamp = new Date().toISOString();
+		const sourceEntries = [
+			{ type: "session", version: 3, id, timestamp, cwd },
+			{
+				type: "message",
+				id: "u1",
+				parentId: null,
+				timestamp,
+				message: { role: "user", content: "first", timestamp: Date.now() },
+			},
+			{
+				type: "message",
+				id: "u2",
+				parentId: "u1",
+				timestamp,
+				message: { role: "user", content: "second", timestamp: Date.now() },
+			},
+		];
+		const sourceText = `${sourceEntries.map(entry => JSON.stringify(entry)).join("\n")}\n`;
+		await fsp.mkdir(sessionDir, { recursive: true });
+		await Bun.write(source, sourceText);
+		try {
+			const forked = await createSessionManager(
+				{ ...buildForkArgs(source, false, sessionDir), forkAt: "u1" },
+				cwd,
+				stubSettings,
+			);
+			if (!forked) throw new Error("Expected a persisted fork");
+			expect(forked.getBranch().map(entry => entry.id)).toEqual(["u1"]);
+			const forkFile = forked.getSessionFile();
+			if (!forkFile) throw new Error("Expected a persisted fork file");
+			const persisted = await loadEntriesFromFile(forkFile);
+			expect(persisted.find(entry => entry.type === "session")?.parentSession).toBe(source);
+			expect(await Bun.file(source).text()).toBe(sourceText);
+
+			await expect(
+				createSessionManager({ ...buildForkArgs(source, false, sessionDir), forkAt: "ghost" }, cwd, stubSettings),
+			).rejects.toMatchObject({
+				name: "SessionResolutionError",
+				message: `Entry "ghost" is not a message in session "${source}".`,
+				hint: undefined,
+			});
+		} finally {
+			await fsp.rm(cwd, { recursive: true, force: true });
+		}
+	});
+
 	it("rejects --fork with missing path without writing a session (#11491)", async () => {
 		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-missing-path-"));
 		const sessionDir = path.join(cwd, "sessions");

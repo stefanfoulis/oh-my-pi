@@ -32,6 +32,7 @@
 - The `devin-windsurf` login lets Windsurf Enterprise users authenticate the `devin` provider with their existing Windsurf account ([#13288](https://github.com/can1357/oh-my-pi/pull/13288) by [@pavel-kalmykov](https://github.com/pavel-kalmykov))
 - The RPC `ask` dialog's `answers` response can carry an optional `note` per answer, and hosts can reply `{ chat: true }` to redirect the `ask` tool into a chat instead of answering, extending the #13551 `set_ask_dialog` protocol.
 - RPC hosts can resume the agent on the advisor notes preserved as cards with the new `continue` command, without pasting text: it is delivered as a hidden synthetic prompt, started immediately when idle and queued as a follow-up while a turn is streaming
+- Added `--fork-at <entryId>` beside `--fork`: the new session holds the source transcript only up to that entry (same cut as RPC `fork`, extended through the tool results the source recorded). The source file is only read, so a host can fork a session at any message while its own process keeps running.
 
 ### Fixed
 
