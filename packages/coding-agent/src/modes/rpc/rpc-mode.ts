@@ -24,6 +24,8 @@ import { clearPluginRootsAndCaches, resolveActiveProjectRegistryPath } from "../
 import {
 	type ExtensionAskDialogQuestion,
 	type ExtensionAskDialogResult,
+	type ExtensionFormDialogChatResult,
+	type ExtensionFormDialogResult,
 	type ExtensionUIContext,
 	type ExtensionUIDialogOptions,
 	type ExtensionUISelectItem,
@@ -31,6 +33,17 @@ import {
 	getExtensionUISelectOptionLabel,
 	timedOutAskDialogResult,
 } from "../../extensibility/extensions";
+import {
+	choiceValue,
+	defaultFormData,
+	fieldError,
+	fieldQuestions,
+	type HtmlFormData,
+	type HtmlFormValue,
+	textValue,
+} from "@oh-my-pi/pi-tui/html-form/data";
+import { loadFormImage } from "@oh-my-pi/pi-tui/html-form/media";
+import { type HtmlForm, parseHtmlForm } from "@oh-my-pi/pi-tui/html-form/parse";
 import {
 	type BuiltSkillPromptMessage,
 	loadSkillPrompt,
@@ -1199,6 +1212,146 @@ export async function requestRpcAskDialog(
 	return timedOut ? timedOutAskDialogResult(questions) : result;
 }
 
+/**
+ * The form as the host receives it: every `<img>` already carries its bytes, so
+ * a host without access to the session's filesystem can still draw it. A picture
+ * that cannot be read becomes an empty `src` and the host shows its `alt`.
+ */
+async function inlineRpcFormImages(form: HtmlForm, cwd: string, signal?: AbortSignal): Promise<HtmlForm> {
+	if (!form.sections.some(section => section.blocks.some(block => block.kind === "image"))) return form;
+	const sections = await Promise.all(
+		form.sections.map(async section => ({
+			...section,
+			blocks: await Promise.all(
+				section.blocks.map(async block => {
+					if (block.kind !== "image") return block;
+					try {
+						const media = await loadFormImage(block.src, { cwd, signal });
+						return { ...block, src: `data:${media.mime};base64,${media.bytes.toBase64()}` };
+					} catch (error) {
+						logger.debug("RPC form image could not be loaded", { src: block.src, error: toError(error) });
+						return { ...block, src: "" };
+					}
+				}),
+			),
+		})),
+	);
+	// Field blocks keep their identity, so `fieldQuestions` still maps the form's own fields.
+	return { ...form, sections };
+}
+
+/** What each named field asks, keyed by field name, so a host can label an answer without re-deriving it. */
+function rpcFormQuestions(form: HtmlForm): Record<string, string> {
+	const questions = fieldQuestions(form);
+	const named: Record<string, string> = {};
+	for (const field of form.fields) {
+		if (field.name) named[field.name] = questions.get(field) ?? field.name;
+	}
+	return named;
+}
+
+/**
+ * Form data from a host's `form` reply: only answers the form offers survive, and
+ * the form's own rules decide whether they are acceptable at all.
+ *
+ * A choice value the field does not list is the user's free-text answer when the
+ * field offers "Other", and is dropped otherwise; a field left empty that the form
+ * requires fails the whole reply rather than answering the model with a guess.
+ */
+function formDataFromRpcResponse(form: HtmlForm, raw: Record<string, unknown>): HtmlFormData {
+	const data: HtmlFormData = {};
+	for (const [name, value] of form.hidden) data[name] = value;
+	for (const field of form.fields) {
+		if (!field.name) continue;
+		const sent = raw[field.name];
+		let value: HtmlFormValue | undefined;
+		if (field.kind === "choice") {
+			const picked = new Set<number>();
+			let other: string | undefined;
+			for (const entry of Array.isArray(sent) ? sent : sent === undefined ? [] : [sent]) {
+				if (typeof entry !== "string" && typeof entry !== "number") continue;
+				const text = String(entry);
+				const index = field.options.findIndex(option => option.value === text);
+				if (index >= 0) picked.add(index);
+				else if (field.other) other ??= text;
+			}
+			value = choiceValue(field, picked, other);
+		} else {
+			value = textValue(field, typeof sent === "string" || typeof sent === "number" ? String(sent) : "");
+		}
+		const invalid = fieldError(field, value);
+		if (invalid) throw new Error(`Form answer for ${JSON.stringify(field.name)} is not acceptable: ${invalid}`);
+		if (value !== undefined) data[field.name] = value;
+	}
+	return data;
+}
+
+/** Notes the user wrote beside their answers: trimmed, and only for named fields they actually answered. */
+function formNotesFromRpcResponse(
+	form: HtmlForm,
+	data: HtmlFormData,
+	raw: unknown,
+): Record<string, string> | undefined {
+	if (!isRecord(raw)) return undefined;
+	const notes: Record<string, string> = {};
+	for (const field of form.fields) {
+		if (!field.name) continue;
+		const note = raw[field.name];
+		if (typeof note !== "string" || !note.trim()) continue;
+		const answer = data[field.name];
+		const answered = Array.isArray(answer) ? answer.length > 0 : answer !== undefined && String(answer).trim() !== "";
+		if (answered) notes[field.name] = note.trim();
+	}
+	return Object.keys(notes).length > 0 ? notes : undefined;
+}
+
+/** Reads a `form` reply; a shape that is neither an answer, a chat redirect nor a dismissal fails the ask. */
+function parseFormDialogResponse(
+	response: RpcExtensionUIResponse,
+	form: HtmlForm,
+	dialogOptions: ExtensionUIDialogOptions,
+): ExtensionFormDialogResult | ExtensionFormDialogChatResult | undefined {
+	if ("cancelled" in response && response.cancelled) {
+		if (response.timedOut) dialogOptions.onTimeout?.();
+		return undefined;
+	}
+	if ("chat" in response && response.chat) return { chat: true };
+	const raw: unknown = "data" in response ? response.data : undefined;
+	if (!isRecord(raw)) throw new Error("Form dialog response must carry a data object");
+	const data = formDataFromRpcResponse(form, raw);
+	const notes = formNotesFromRpcResponse(form, data, "notes" in response ? response.notes : undefined);
+	return notes ? { data, notes } : { data };
+}
+
+/** Sends one `ask` form as an RPC `form` dialog; a timeout submits the form's own values, as every other surface does. */
+export async function requestRpcFormDialog(
+	pendingRequests: Map<string, PendingExtensionRequest>,
+	output: RpcOutput,
+	html: string,
+	cwd: string,
+	dialogOptions?: ExtensionUIDialogOptions,
+): Promise<ExtensionFormDialogResult | ExtensionFormDialogChatResult | undefined> {
+	const form = parseHtmlForm(html);
+	let timedOut = false;
+	const opts: ExtensionUIDialogOptions = {
+		...dialogOptions,
+		onTimeout: () => {
+			timedOut = true;
+			dialogOptions?.onTimeout?.();
+		},
+	};
+	const sent = await inlineRpcFormImages(form, cwd, opts.signal);
+	const result = await requestRpcDialog(
+		pendingRequests,
+		output,
+		opts,
+		undefined,
+		{ method: "form", form: sent, questions: rpcFormQuestions(form), timeout: dialogOptions?.timeout },
+		response => parseFormDialogResponse(response, form, opts),
+	);
+	return timedOut ? { data: defaultFormData(form), timedOut: true } : result;
+}
+
 export function requestRpcEditor(
 	pendingRequests: Map<string, PendingExtensionRequest>,
 	output: RpcOutput,
@@ -1524,7 +1677,10 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	 */
 	class RpcExtensionUIContext implements ExtensionUIContext {
 		readonly supportsEditor = true;
-		/** Set by `set_ask_dialog`; hosts that never opt in keep the select/editor ask fallback. */
+		/**
+		 * Set by `set_ask_dialog`; it enables both the extension `ask` dialog and the
+		 * `ask` tool's form. Hosts that never opt in keep the select/editor fallbacks.
+		 */
 		askDialogEnabled = false;
 
 		constructor(
@@ -1536,6 +1692,18 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			if (!this.askDialogEnabled) return undefined;
 			return (questions, dialogOptions) =>
 				requestRpcAskDialog(this.pendingRequests, this.output, questions, dialogOptions);
+		}
+
+		get formDialog(): ExtensionUIContext["formDialog"] {
+			if (!this.askDialogEnabled) return undefined;
+			return (html, dialogOptions) =>
+				requestRpcFormDialog(
+					this.pendingRequests,
+					this.output,
+					html,
+					session.sessionManager.getCwd(),
+					dialogOptions,
+				);
 		}
 
 		select(

@@ -68,6 +68,15 @@ import type { ContextUsage } from "@oh-my-pi/pi-tui/status-line/types";
 import type { LogoutAccount } from "@oh-my-pi/pi-tui/overlays/logout-account-selector";
 import type { Goal } from "@oh-my-pi/pi-tui/tools/goal";
 import type { TodoItem, TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
+import type {
+	ChoiceField,
+	ChoiceOption,
+	FormBlock,
+	FormSection,
+	FormSpan,
+	HtmlForm,
+	TextField,
+} from "@oh-my-pi/pi-tui/html-form/parse";
 
 type Assert<T extends true> = T;
 type Leaf = string | number | boolean | null;
@@ -226,6 +235,19 @@ export type Frames = Assert<
 		askQuestion: Outbound<RpcAskDialogQuestion, Wire.AskQuestion>;
 		askOption: Outbound<RpcAskDialogQuestion["options"][number], Wire.AskOption>;
 		askAnswer: Inbound<Wire.AskAnswer, Extract<RpcExtensionUIResponse, { answers: unknown }>["answers"][number]>;
+		htmlForm: Outbound<HtmlForm, Wire.HtmlForm>;
+		formSection: Outbound<FormSection, Wire.FormSection>;
+		formSpan: Outbound<FormSpan, Wire.FormSpan>;
+		formChoiceField: Outbound<ChoiceField, Wire.FormChoiceField>;
+		formTextField: Outbound<TextField, Wire.FormTextField>;
+		formChoiceOption: Outbound<ChoiceOption, Wire.FormChoiceOption>;
+		formTextBlock: Outbound<Extract<FormBlock, { kind: "text" }>, Wire.FormTextBlock>;
+		formListBlock: Outbound<Extract<FormBlock, { kind: "list" }>, Wire.FormListBlock>;
+		formPreBlock: Outbound<Extract<FormBlock, { kind: "pre" }>, Wire.FormPreBlock>;
+		formTableBlock: Outbound<Extract<FormBlock, { kind: "table" }>, Wire.FormTableBlock>;
+		formImageBlock: Outbound<Extract<FormBlock, { kind: "image" }>, Wire.FormImageBlock>;
+		formSvgBlock: Outbound<Extract<FormBlock, { kind: "svg" }>, Wire.FormSvgBlock>;
+		formFieldBlock: Outbound<Extract<FormBlock, { kind: "field" }>, Wire.FormFieldBlock>;
 		hostToolDefinition: Inbound<Wire.HostToolDefinition, RpcHostToolDefinition>;
 		hostUriScheme: Inbound<Wire.HostUriSchemeDefinition, RpcHostUriSchemeDefinition>;
 		hostToolUpdate: Inbound<Wire.HostToolUpdate, RpcHostToolUpdate>;
@@ -237,6 +259,7 @@ export type Frames = Assert<
 		uiCancel: Inbound<Wire.CancelUiResponse, Extract<RpcExtensionUIResponse, { cancelled: unknown }>>;
 		uiAnswers: Inbound<Wire.AnswersUiResponse, Extract<RpcExtensionUIResponse, { answers: unknown }>>;
 		uiChat: Inbound<Wire.ChatUiResponse, Extract<RpcExtensionUIResponse, { chat: unknown }>>;
+		uiFormData: Inbound<Wire.FormDataUiResponse, Extract<RpcExtensionUIResponse, { data: unknown }>>;
 		responseFailure: Outbound<Extract<RpcResponse, { success: false }>, Wire.RpcResponse>;
 	}>
 >;

@@ -34,6 +34,8 @@ import type { RpcMessagesPage } from "./rpc-messages";
 import type { GoalModeState } from "../../goals/state";
 import type { RpcGoalOp, RpcGoalResult } from "./rpc-goal";
 import type { BtwHistoryRecord } from "../../session/btw-history";
+import type { HtmlFormData } from "@oh-my-pi/pi-tui/html-form/data";
+import type { HtmlForm } from "@oh-my-pi/pi-tui/html-form/parse";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -825,6 +827,20 @@ export type RpcExtensionUIRequest =
 			questions: RpcAskDialogQuestion[];
 			timeout?: number;
 	  }
+	/**
+	 * One `ask` tool call as its parsed form; emitted only after the host opts in
+	 * with `set_ask_dialog`. `<img>` sources arrive inlined as `data:` URLs (empty
+	 * when the picture could not be loaded) and `questions` names what each field
+	 * asks, keyed by field name.
+	 */
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "form";
+			form: HtmlForm;
+			questions: Record<string, string>;
+			timeout?: number;
+	  }
 	| { type: "extension_ui_request"; id: string; method: "cancel"; targetId: string }
 	| {
 			type: "extension_ui_request";
@@ -981,7 +997,14 @@ export type RpcExtensionUIResponse =
 			id: string;
 			answers: Array<{ id: string; selectedOptions: string[]; customInput?: string; note?: string }>;
 	  }
-	/** The user chose "Chat about this" instead of answering an `ask` request. */
+	/** Submitted data of a `form` request, with the free-text notes written beside the answers. */
+	| {
+			type: "extension_ui_response";
+			id: string;
+			data: HtmlFormData;
+			notes?: Record<string, string>;
+	  }
+	/** The user chose "Chat about this" instead of answering an `ask` or `form` request. */
 	| { type: "extension_ui_response"; id: string; chat: true };
 
 // ============================================================================

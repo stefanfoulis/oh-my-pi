@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- RPC hosts that enable `set_ask_dialog` now receive the `ask` tool's form as one `extension_ui_request` with `method: "form"`: the parsed form (pictures inlined as `data:` URLs), the question each named field asks, and the dialog timeout. They answer with `data` by field name, optional free-text `notes` beside those answers, or `{ chat: true }` to talk the questions over instead of filling the form in. Notes reach the model under `User notes:`, and a chat reply ends the call with the questions it asked. The Go, Python and Rust SDKs decode the new frames
+
 ## [18.18.4] - 2026-11-09
 
 ### Added

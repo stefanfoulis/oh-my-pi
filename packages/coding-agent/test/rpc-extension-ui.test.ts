@@ -707,7 +707,7 @@ describe("RPC ask dialog", () => {
 		expect(onTimeout).not.toHaveBeenCalled();
 	});
 
-	it("walks the ask tool's form through select prompts, also after the host opts into ask dialogs", async () => {
+	it("walks the ask tool's form through select prompts until the host opts into the form dialog", async () => {
 		await using temp = await TempDir.create("@rpc-ask-dialog-");
 		const extensionPath = temp.join("scripted-ask.ts");
 		await Bun.write(extensionPath, scriptedAskProvider);
@@ -748,6 +748,7 @@ describe("RPC ask dialog", () => {
 		};
 		const selectRequests: Record<string, unknown>[] = [];
 		const askRequests: Record<string, unknown>[] = [];
+		const formRequests: Record<string, unknown>[] = [];
 		const toolResults: unknown[] = [];
 		let optInResponse: unknown;
 		let finished = false;
@@ -769,6 +770,9 @@ describe("RPC ask dialog", () => {
 				} else if (frame.type === "extension_ui_request" && frame.method === "ask") {
 					askRequests.push(frame);
 					await send({ type: "extension_ui_response", id: frame.id, cancelled: true });
+				} else if (frame.type === "extension_ui_request" && frame.method === "form") {
+					formRequests.push(frame);
+					await send({ type: "extension_ui_response", id: frame.id, data: { db: "pg" } });
 				} else if (frame.type === "tool_execution_end" && frame.toolName === "ask") {
 					toolResults.push(frame.result);
 				} else if (frame.type === "prompt_result" && frame.id === "fallback") {
@@ -789,7 +793,7 @@ describe("RPC ask dialog", () => {
 
 		if (!finished) throw new Error(`RPC ask fixture did not finish: ${await stderr}`);
 		await stderr;
-		expect(selectRequests).toHaveLength(2);
+		expect(selectRequests).toHaveLength(1);
 		expect(selectRequests[0]).toMatchObject({ method: "select", title: "Which database?" });
 		expect(optInResponse).toEqual({
 			id: "opt-in",
@@ -799,6 +803,8 @@ describe("RPC ask dialog", () => {
 			data: { enabled: true },
 		});
 		expect(askRequests).toEqual([]);
+		expect(formRequests).toHaveLength(1);
+		expect(formRequests[0]).toMatchObject({ method: "form", questions: { db: "Which database?" } });
 		const answered = expect.objectContaining({
 			details: { answers: [{ name: "db", question: "Which database?", answer: "Postgres" }] },
 		});

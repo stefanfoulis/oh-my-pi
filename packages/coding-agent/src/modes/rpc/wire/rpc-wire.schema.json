@@ -5179,6 +5179,405 @@
 			],
 			"description": "One question of an `ask` request; hosts always offer free text besides `options`."
 		},
+		"FormSpanStyle": {
+			"enum": [
+				"code",
+				"strong",
+				"em"
+			],
+			"type": "string",
+			"description": "Inline emphasis a run of form text keeps."
+		},
+		"FormSpan": {
+			"type": "object",
+			"properties": {
+				"text": {
+					"type": "string"
+				},
+				"style": {
+					"$ref": "#/$defs/FormSpanStyle"
+				}
+			},
+			"required": [
+				"text"
+			],
+			"description": "A run of inline form text; a newline inside `text` is a hard line break."
+		},
+		"FormChoiceOption": {
+			"type": "object",
+			"properties": {
+				"value": {
+					"type": "string"
+				},
+				"label": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormSpan"
+					}
+				},
+				"checked": {
+					"type": "boolean"
+				},
+				"disabled": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"value",
+				"label",
+				"checked",
+				"disabled"
+			],
+			"description": "One answer of a choice field; `value` is what an answer reports."
+		},
+		"FormChoiceField": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "choice"
+				},
+				"name": {
+					"type": "string"
+				},
+				"multi": {
+					"type": "boolean"
+				},
+				"select": {
+					"type": "boolean"
+				},
+				"other": {
+					"type": "boolean"
+				},
+				"label": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormSpan"
+					}
+				},
+				"options": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormChoiceOption"
+					}
+				},
+				"required": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"kind",
+				"name",
+				"multi",
+				"select",
+				"other",
+				"label",
+				"options",
+				"required"
+			],
+			"description": "A radio group (`multi: false`), a checkbox group (`multi: true`) or a `<select>` (`select: true`). With `other`, the host offers a free-text answer besides the options."
+		},
+		"FormTextField": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "text"
+				},
+				"name": {
+					"type": "string"
+				},
+				"type": {
+					"type": "string",
+					"description": "The `<input type>` (`text`, `number`, `url`, …); `textarea` for textareas."
+				},
+				"multiline": {
+					"type": "boolean"
+				},
+				"label": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormSpan"
+					}
+				},
+				"value": {
+					"type": "string"
+				},
+				"placeholder": {
+					"type": "string"
+				},
+				"required": {
+					"type": "boolean"
+				},
+				"rows": {
+					"type": "integer",
+					"description": "Visible rows a textarea asked for; 1 for inputs."
+				},
+				"min": {
+					"type": "number"
+				},
+				"max": {
+					"type": "number"
+				},
+				"pattern": {
+					"type": "string",
+					"description": "Anchored as HTML does: the answer must match `^(?:pattern)$`."
+				},
+				"minLength": {
+					"type": "integer"
+				},
+				"maxLength": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"kind",
+				"name",
+				"type",
+				"multiline",
+				"label",
+				"value",
+				"placeholder",
+				"required",
+				"rows"
+			],
+			"description": "A single-line `<input>` (`multiline: false`) or a `<textarea>`."
+		},
+		"FormField": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/FormChoiceField"
+				},
+				{
+					"$ref": "#/$defs/FormTextField"
+				}
+			],
+			"description": "A control the user answers, discriminated by `kind`."
+		},
+		"FormTextBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "text"
+				},
+				"spans": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormSpan"
+					}
+				},
+				"heading": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"kind",
+				"spans",
+				"heading"
+			]
+		},
+		"FormListBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "list"
+				},
+				"items": {
+					"type": "array",
+					"items": {
+						"type": "array",
+						"items": {
+							"$ref": "#/$defs/FormSpan"
+						}
+					}
+				},
+				"ordered": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"kind",
+				"items",
+				"ordered"
+			]
+		},
+		"FormPreBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "pre"
+				},
+				"text": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"kind",
+				"text"
+			]
+		},
+		"FormTableBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "table"
+				},
+				"rows": {
+					"type": "array",
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/FormSpan"
+							}
+						}
+					}
+				},
+				"headerRows": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"kind",
+				"rows",
+				"headerRows"
+			],
+			"description": "A table as rows of cells, each cell a run of spans; the first `headerRows` rows are headers."
+		},
+		"FormImageBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "image"
+				},
+				"src": {
+					"type": "string"
+				},
+				"alt": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"kind",
+				"src",
+				"alt"
+			],
+			"description": "A picture as a `data:` URL, empty when it could not be loaded; show `alt` in its place."
+		},
+		"FormSvgBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "svg"
+				},
+				"markup": {
+					"type": "string"
+				},
+				"alt": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"kind",
+				"markup",
+				"alt"
+			],
+			"description": "An inline `<svg>`, serialized whole. Model-written markup: render it as an image source, never as markup in the host's own document."
+		},
+		"FormFieldBlock": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"const": "field"
+				},
+				"field": {
+					"$ref": "#/$defs/FormField"
+				}
+			},
+			"required": [
+				"kind",
+				"field"
+			]
+		},
+		"FormBlock": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/FormTextBlock"
+				},
+				{
+					"$ref": "#/$defs/FormListBlock"
+				},
+				{
+					"$ref": "#/$defs/FormPreBlock"
+				},
+				{
+					"$ref": "#/$defs/FormTableBlock"
+				},
+				{
+					"$ref": "#/$defs/FormImageBlock"
+				},
+				{
+					"$ref": "#/$defs/FormSvgBlock"
+				},
+				{
+					"$ref": "#/$defs/FormFieldBlock"
+				}
+			],
+			"description": "One renderable unit of a form section, in document order, discriminated by `kind`."
+		},
+		"FormSection": {
+			"type": "object",
+			"properties": {
+				"title": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormSpan"
+					}
+				},
+				"blocks": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormBlock"
+					}
+				}
+			},
+			"required": [
+				"title",
+				"blocks"
+			],
+			"description": "A `<fieldset>` titled by its `<legend>`, or untitled loose content between fieldsets."
+		},
+		"HtmlForm": {
+			"type": "object",
+			"properties": {
+				"sections": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormSection"
+					}
+				},
+				"fields": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/FormField"
+					}
+				},
+				"hidden": {
+					"type": "array",
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				}
+			},
+			"required": [
+				"sections",
+				"fields",
+				"hidden"
+			],
+			"description": "A parsed `ask` form: what to draw, its fields in document order, and its hidden inputs as `[name, value]` pairs."
+		},
 		"SelectUiRequest": {
 			"type": "object",
 			"properties": {
@@ -5338,6 +5737,42 @@
 				"questions"
 			],
 			"description": "Every question of one `ask` tool call; sent only after `set_ask_dialog` enables it."
+		},
+		"FormUiRequest": {
+			"type": "object",
+			"properties": {
+				"type": {
+					"const": "extension_ui_request"
+				},
+				"id": {
+					"type": "string"
+				},
+				"method": {
+					"const": "form"
+				},
+				"form": {
+					"$ref": "#/$defs/HtmlForm"
+				},
+				"questions": {
+					"type": "object",
+					"properties": {},
+					"additionalProperties": {
+						"type": "string"
+					},
+					"description": "What each named field asks, keyed by field name."
+				},
+				"timeout": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"type",
+				"id",
+				"method",
+				"form",
+				"questions"
+			],
+			"description": "One `ask` tool call as a parsed form; sent only after `set_ask_dialog` enables it."
 		},
 		"CancelUiRequest": {
 			"type": "object",
@@ -5541,6 +5976,9 @@
 					"$ref": "#/$defs/AskUiRequest"
 				},
 				{
+					"$ref": "#/$defs/FormUiRequest"
+				},
+				{
 					"$ref": "#/$defs/CancelUiRequest"
 				},
 				{
@@ -5589,6 +6027,23 @@
 				"selectedOptions"
 			],
 			"description": "Answer to one `ask` question: exact option labels, plus optional free text."
+		},
+		"FormValue": {
+			"anyOf": [
+				{
+					"type": "string"
+				},
+				{
+					"type": "number"
+				},
+				{
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				}
+			],
+			"description": "One control's answer: its text, a number for non-empty `number`/`range` inputs, or the chosen values of a checkbox group or multi-select."
 		},
 		"ValueUiResponse": {
 			"type": "object",
@@ -5694,7 +6149,40 @@
 				"id",
 				"chat"
 			],
-			"description": "Leaves an `ask` request unanswered: the user chose \"Chat about this\" instead."
+			"description": "Leaves an `ask` or `form` request unanswered: the user chose \"Chat about this\" instead."
+		},
+		"FormDataUiResponse": {
+			"type": "object",
+			"properties": {
+				"type": {
+					"const": "extension_ui_response"
+				},
+				"id": {
+					"type": "string"
+				},
+				"data": {
+					"type": "object",
+					"properties": {},
+					"additionalProperties": {
+						"$ref": "#/$defs/FormValue"
+					},
+					"description": "Each answered control's value, keyed by its `name`."
+				},
+				"notes": {
+					"type": "object",
+					"properties": {},
+					"additionalProperties": {
+						"type": "string"
+					},
+					"description": "Free-text remarks beside the answers, keyed by field name; blank ones and ones on unanswered fields are dropped."
+				}
+			},
+			"required": [
+				"type",
+				"id",
+				"data"
+			],
+			"description": "Answers a `form` request. A control left unanswered is absent; hidden inputs are not sent back."
 		},
 		"ExtensionUiResponse": {
 			"anyOf": [
@@ -5712,6 +6200,9 @@
 				},
 				{
 					"$ref": "#/$defs/ChatUiResponse"
+				},
+				{
+					"$ref": "#/$defs/FormDataUiResponse"
 				}
 			],
 			"description": "Host reply to an extension UI request; variants share `type` and differ by their payload key."

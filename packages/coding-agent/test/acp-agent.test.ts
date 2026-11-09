@@ -4006,7 +4006,7 @@ describe("ACP agent", () => {
 
 			const result = await ctx.formDialog!(DEPLOY_FORM);
 
-			expect(result?.data).toMatchObject({ target: "canary", checks: ["lint", "smoke"] });
+			expect(result).toMatchObject({ data: { target: "canary", checks: ["lint", "smoke"] } });
 		});
 
 		it("returns undefined when a form elicitation is cancelled", async () => {

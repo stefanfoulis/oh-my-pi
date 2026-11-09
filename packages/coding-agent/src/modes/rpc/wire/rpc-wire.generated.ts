@@ -1284,6 +1284,118 @@ export interface AskQuestion {
 	recommended?: number;
 }
 
+/** Inline emphasis a run of form text keeps. */
+export type FormSpanStyle = "code" | "strong" | "em";
+
+/** A run of inline form text; a newline inside `text` is a hard line break. */
+export interface FormSpan {
+	text: string;
+	style?: FormSpanStyle;
+}
+
+/** One answer of a choice field; `value` is what an answer reports. */
+export interface FormChoiceOption {
+	value: string;
+	label: FormSpan[];
+	checked: boolean;
+	disabled: boolean;
+}
+
+/** A radio group (`multi: false`), a checkbox group (`multi: true`) or a `<select>` (`select: true`). With `other`, the host offers a free-text answer besides the options. */
+export interface FormChoiceField {
+	kind: "choice";
+	name: string;
+	multi: boolean;
+	select: boolean;
+	other: boolean;
+	label: FormSpan[];
+	options: FormChoiceOption[];
+	required: boolean;
+}
+
+/** A single-line `<input>` (`multiline: false`) or a `<textarea>`. */
+export interface FormTextField {
+	kind: "text";
+	name: string;
+	/** The `<input type>` (`text`, `number`, `url`, …); `textarea` for textareas. */
+	type: string;
+	multiline: boolean;
+	label: FormSpan[];
+	value: string;
+	placeholder: string;
+	required: boolean;
+	/** Visible rows a textarea asked for; 1 for inputs. */
+	rows: number;
+	min?: number;
+	max?: number;
+	/** Anchored as HTML does: the answer must match `^(?:pattern)$`. */
+	pattern?: string;
+	minLength?: number;
+	maxLength?: number;
+}
+
+/** A control the user answers, discriminated by `kind`. */
+export type FormField = FormChoiceField | FormTextField;
+
+export interface FormTextBlock {
+	kind: "text";
+	spans: FormSpan[];
+	heading: boolean;
+}
+
+export interface FormListBlock {
+	kind: "list";
+	items: FormSpan[][];
+	ordered: boolean;
+}
+
+export interface FormPreBlock {
+	kind: "pre";
+	text: string;
+}
+
+/** A table as rows of cells, each cell a run of spans; the first `headerRows` rows are headers. */
+export interface FormTableBlock {
+	kind: "table";
+	rows: FormSpan[][][];
+	headerRows: number;
+}
+
+/** A picture as a `data:` URL, empty when it could not be loaded; show `alt` in its place. */
+export interface FormImageBlock {
+	kind: "image";
+	src: string;
+	alt: string;
+}
+
+/** An inline `<svg>`, serialized whole. Model-written markup: render it as an image source, never as markup in the host's own document. */
+export interface FormSvgBlock {
+	kind: "svg";
+	markup: string;
+	alt: string;
+}
+
+export interface FormFieldBlock {
+	kind: "field";
+	field: FormField;
+}
+
+/** One renderable unit of a form section, in document order, discriminated by `kind`. */
+export type FormBlock = FormTextBlock | FormListBlock | FormPreBlock | FormTableBlock | FormImageBlock | FormSvgBlock | FormFieldBlock;
+
+/** A `<fieldset>` titled by its `<legend>`, or untitled loose content between fieldsets. */
+export interface FormSection {
+	title: FormSpan[];
+	blocks: FormBlock[];
+}
+
+/** A parsed `ask` form: what to draw, its fields in document order, and its hidden inputs as `[name, value]` pairs. */
+export interface HtmlForm {
+	sections: FormSection[];
+	fields: FormField[];
+	hidden: string[][];
+}
+
 export interface SelectUiRequest {
 	type: "extension_ui_request";
 	id: string;
@@ -1328,6 +1440,17 @@ export interface AskUiRequest {
 	id: string;
 	method: "ask";
 	questions: AskQuestion[];
+	timeout?: number;
+}
+
+/** One `ask` tool call as a parsed form; sent only after `set_ask_dialog` enables it. */
+export interface FormUiRequest {
+	type: "extension_ui_request";
+	id: string;
+	method: "form";
+	form: HtmlForm;
+	/** What each named field asks, keyed by field name. */
+	questions: Record<string, string>;
 	timeout?: number;
 }
 
@@ -1389,7 +1512,7 @@ export interface OpenUrlUiRequest {
 }
 
 /** Extension UI request, discriminated by `method`. */
-export type ExtensionUiRequest = SelectUiRequest | ConfirmUiRequest | InputUiRequest | EditorUiRequest | AskUiRequest | CancelUiRequest | NotifyUiRequest | SetStatusUiRequest | SetWidgetUiRequest | SetTitleUiRequest | SetEditorTextUiRequest | OpenUrlUiRequest;
+export type ExtensionUiRequest = SelectUiRequest | ConfirmUiRequest | InputUiRequest | EditorUiRequest | AskUiRequest | FormUiRequest | CancelUiRequest | NotifyUiRequest | SetStatusUiRequest | SetWidgetUiRequest | SetTitleUiRequest | SetEditorTextUiRequest | OpenUrlUiRequest;
 
 /** Answer to one `ask` question: exact option labels, plus optional free text. */
 export interface AskAnswer {
@@ -1399,6 +1522,9 @@ export interface AskAnswer {
 	/** Free-text annotation; dropped when blank or when the answer carries no choice at all. */
 	note?: string;
 }
+
+/** One control's answer: its text, a number for non-empty `number`/`range` inputs, or the chosen values of a checkbox group or multi-select. */
+export type FormValue = string | number | string[];
 
 /** Answers a `select`, `input`, or `editor` request. */
 export interface ValueUiResponse {
@@ -1429,15 +1555,25 @@ export interface AnswersUiResponse {
 	answers: AskAnswer[];
 }
 
-/** Leaves an `ask` request unanswered: the user chose "Chat about this" instead. */
+/** Leaves an `ask` or `form` request unanswered: the user chose "Chat about this" instead. */
 export interface ChatUiResponse {
 	type: "extension_ui_response";
 	id: string;
 	chat: true;
 }
 
+/** Answers a `form` request. A control left unanswered is absent; hidden inputs are not sent back. */
+export interface FormDataUiResponse {
+	type: "extension_ui_response";
+	id: string;
+	/** Each answered control's value, keyed by its `name`. */
+	data: Record<string, FormValue>;
+	/** Free-text remarks beside the answers, keyed by field name; blank ones and ones on unanswered fields are dropped. */
+	notes?: Record<string, string>;
+}
+
 /** Host reply to an extension UI request; variants share `type` and differ by their payload key. */
-export type ExtensionUiResponse = ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse | ChatUiResponse;
+export type ExtensionUiResponse = ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse | ChatUiResponse | FormDataUiResponse;
 
 export interface HostToolCallRequest {
 	type: "host_tool_call";

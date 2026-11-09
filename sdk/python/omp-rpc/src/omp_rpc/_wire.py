@@ -191,8 +191,14 @@ _WIDGET_PLACEMENT_VALUES: Final[frozenset[str]] = frozenset({"aboveEditor", "bel
 _decode_widget_placement = cast("Decoder[WidgetPlacement]", literal(_WIDGET_PLACEMENT_VALUES))
 
 
-ExtensionUiMethod: TypeAlias = Literal["select", "confirm", "input", "editor", "ask", "cancel", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text", "open_url"]
-_EXTENSION_UI_METHOD_VALUES: Final[frozenset[str]] = frozenset({"select", "confirm", "input", "editor", "ask", "cancel", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text", "open_url"})
+FormSpanStyle: TypeAlias = Literal["code", "strong", "em"]
+"""Inline emphasis a run of form text keeps."""
+_FORM_SPAN_STYLE_VALUES: Final[frozenset[str]] = frozenset({"code", "strong", "em"})
+_decode_form_span_style = cast("Decoder[FormSpanStyle]", literal(_FORM_SPAN_STYLE_VALUES))
+
+
+ExtensionUiMethod: TypeAlias = Literal["select", "confirm", "input", "editor", "ask", "form", "cancel", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text", "open_url"]
+_EXTENSION_UI_METHOD_VALUES: Final[frozenset[str]] = frozenset({"select", "confirm", "input", "editor", "ask", "form", "cancel", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text", "open_url"})
 _decode_extension_ui_method = cast("Decoder[ExtensionUiMethod]", literal(_EXTENSION_UI_METHOD_VALUES))
 
 
@@ -1499,6 +1505,122 @@ class AskQuestion:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class FormSpan:
+    """A run of inline form text; a newline inside `text` is a hard line break."""
+    text: str
+    style: FormSpanStyle | None = None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormChoiceOption:
+    """One answer of a choice field; `value` is what an answer reports."""
+    value: str
+    label: tuple[FormSpan, ...]
+    checked: bool
+    disabled: bool
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormChoiceField:
+    """A radio group (`multi: false`), a checkbox group (`multi: true`) or a `<select>` (`select: true`). With `other`, the host offers a free-text answer besides the options."""
+    kind: Literal["choice"] = "choice"
+    name: str
+    multi: bool
+    select: bool
+    other: bool
+    label: tuple[FormSpan, ...]
+    options: tuple[FormChoiceOption, ...]
+    required: bool
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormTextField:
+    """A single-line `<input>` (`multiline: false`) or a `<textarea>`."""
+    kind: Literal["text"] = "text"
+    name: str
+    type: str
+    """The `<input type>` (`text`, `number`, `url`, …); `textarea` for textareas."""
+    multiline: bool
+    label: tuple[FormSpan, ...]
+    value: str
+    placeholder: str
+    required: bool
+    rows: int
+    """Visible rows a textarea asked for; 1 for inputs."""
+    min: float | None = None
+    max: float | None = None
+    pattern: str | None = None
+    """Anchored as HTML does: the answer must match `^(?:pattern)$`."""
+    min_length: int | None = None
+    max_length: int | None = None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormTextBlock:
+    kind: Literal["text"] = "text"
+    spans: tuple[FormSpan, ...]
+    heading: bool
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormListBlock:
+    kind: Literal["list"] = "list"
+    items: tuple[tuple[FormSpan, ...], ...]
+    ordered: bool
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormPreBlock:
+    kind: Literal["pre"] = "pre"
+    text: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormTableBlock:
+    """A table as rows of cells, each cell a run of spans; the first `headerRows` rows are headers."""
+    kind: Literal["table"] = "table"
+    rows: tuple[tuple[tuple[FormSpan, ...], ...], ...]
+    header_rows: int
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormImageBlock:
+    """A picture as a `data:` URL, empty when it could not be loaded; show `alt` in its place."""
+    kind: Literal["image"] = "image"
+    src: str
+    alt: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormSvgBlock:
+    """An inline `<svg>`, serialized whole. Model-written markup: render it as an image source, never as markup in the host's own document."""
+    kind: Literal["svg"] = "svg"
+    markup: str
+    alt: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormFieldBlock:
+    kind: Literal["field"] = "field"
+    field: FormField
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormSection:
+    """A `<fieldset>` titled by its `<legend>`, or untitled loose content between fieldsets."""
+    title: tuple[FormSpan, ...]
+    blocks: tuple[FormBlock, ...]
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class HtmlForm:
+    """A parsed `ask` form: what to draw, its fields in document order, and its hidden inputs as `[name, value]` pairs."""
+    sections: tuple[FormSection, ...]
+    fields: tuple[FormField, ...]
+    hidden: tuple[tuple[str, ...], ...]
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class SelectUiRequest:
     type: Literal["extension_ui_request"] = "extension_ui_request"
     id: str
@@ -1547,6 +1669,18 @@ class AskUiRequest:
     id: str
     method: Literal["ask"] = "ask"
     questions: tuple[AskQuestion, ...]
+    timeout: int | None = None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class FormUiRequest:
+    """One `ask` tool call as a parsed form; sent only after `set_ask_dialog` enables it."""
+    type: Literal["extension_ui_request"] = "extension_ui_request"
+    id: str
+    method: Literal["form"] = "form"
+    form: HtmlForm
+    questions: dict[str, str]
+    """What each named field asks, keyed by field name."""
     timeout: int | None = None
 
 
@@ -1630,6 +1764,9 @@ class ExtensionUiRequest(ExtensionUiRequestMixin):
     prefill: str | None = None
     prompt_style: bool | None = None
     questions: tuple[AskQuestion, ...] | None = None
+    form: HtmlForm | None = None
+    form_questions: dict[str, str] | None = None
+    """What each named field asks, keyed by field name."""
     target_id: str | None = None
     notify_type: NotifyType | None = None
     status_key: str | None = None
@@ -1715,6 +1852,14 @@ UsageLimitState: TypeAlias = UsageLimitLowPriority | UsageLimitWrapUp
 
 RpcAgentEvent: TypeAlias = AgentStartEvent | AgentEndEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolStreamUpdateEvent | ToolExecutionEndEvent | AutoCompactionStartEvent | AutoCompactionEndEvent | ManualCompactionStartEvent | ManualCompactionEndEvent | AutoRetryStartEvent | AutoRetryEndEvent | CacheWarmingStartEvent | CacheWarmingEndEvent | RetryFallbackAppliedEvent | RetryFallbackSucceededEvent | ModelChangedEvent | ConfigWarningsChangedEvent | AdvisorCostChangedEvent | AdvisorYieldedEvent | TtsrTriggeredEvent | TodoReminderEvent | TodoAutoClearEvent | IrcMessageEvent | NoticeEvent | ThinkingLevelChangedEvent | GoalUpdatedEvent | QueueUpdateEvent
 """A session event, discriminated by `type`; `set_event_filter` selects which are sent."""
+
+
+FormField: TypeAlias = FormChoiceField | FormTextField
+"""A control the user answers, discriminated by `kind`."""
+
+
+FormBlock: TypeAlias = FormTextBlock | FormListBlock | FormPreBlock | FormTableBlock | FormImageBlock | FormSvgBlock | FormFieldBlock
+"""One renderable unit of a form section, in document order, discriminated by `kind`."""
 
 
 RpcNotification: TypeAlias = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | DictationTranscriptEvent | DictationEndEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent | UnknownNotification
@@ -2979,6 +3124,136 @@ def parse_ask_question(value: object, path: str = "AskQuestion") -> AskQuestion:
     )
 
 
+def parse_form_span(value: object, path: str = "FormSpan") -> FormSpan:
+    payload = expect_object(value, path)
+    return FormSpan(
+        text=required(payload, "text", decode_str, path),
+        style=optional(payload, "style", _decode_form_span_style, path),
+    )
+
+
+def parse_form_choice_option(value: object, path: str = "FormChoiceOption") -> FormChoiceOption:
+    payload = expect_object(value, path)
+    return FormChoiceOption(
+        value=required(payload, "value", decode_str, path),
+        label=required(payload, "label", array(parse_form_span), path),
+        checked=required(payload, "checked", decode_bool, path),
+        disabled=required(payload, "disabled", decode_bool, path),
+    )
+
+
+def parse_form_choice_field(value: object, path: str = "FormChoiceField") -> FormChoiceField:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["choice"]]', literal(frozenset({"choice"}))), path)
+    return FormChoiceField(
+        name=required(payload, "name", decode_str, path),
+        multi=required(payload, "multi", decode_bool, path),
+        select=required(payload, "select", decode_bool, path),
+        other=required(payload, "other", decode_bool, path),
+        label=required(payload, "label", array(parse_form_span), path),
+        options=required(payload, "options", array(parse_form_choice_option), path),
+        required=required(payload, "required", decode_bool, path),
+    )
+
+
+def parse_form_text_field(value: object, path: str = "FormTextField") -> FormTextField:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["text"]]', literal(frozenset({"text"}))), path)
+    return FormTextField(
+        name=required(payload, "name", decode_str, path),
+        type=required(payload, "type", decode_str, path),
+        multiline=required(payload, "multiline", decode_bool, path),
+        label=required(payload, "label", array(parse_form_span), path),
+        value=required(payload, "value", decode_str, path),
+        placeholder=required(payload, "placeholder", decode_str, path),
+        required=required(payload, "required", decode_bool, path),
+        rows=required(payload, "rows", decode_int, path),
+        min=optional(payload, "min", decode_float, path),
+        max=optional(payload, "max", decode_float, path),
+        pattern=optional(payload, "pattern", decode_str, path),
+        min_length=optional(payload, "minLength", decode_int, path),
+        max_length=optional(payload, "maxLength", decode_int, path),
+    )
+
+
+def parse_form_text_block(value: object, path: str = "FormTextBlock") -> FormTextBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["text"]]', literal(frozenset({"text"}))), path)
+    return FormTextBlock(
+        spans=required(payload, "spans", array(parse_form_span), path),
+        heading=required(payload, "heading", decode_bool, path),
+    )
+
+
+def parse_form_list_block(value: object, path: str = "FormListBlock") -> FormListBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["list"]]', literal(frozenset({"list"}))), path)
+    return FormListBlock(
+        items=required(payload, "items", array(array(parse_form_span)), path),
+        ordered=required(payload, "ordered", decode_bool, path),
+    )
+
+
+def parse_form_pre_block(value: object, path: str = "FormPreBlock") -> FormPreBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["pre"]]', literal(frozenset({"pre"}))), path)
+    return FormPreBlock(
+        text=required(payload, "text", decode_str, path),
+    )
+
+
+def parse_form_table_block(value: object, path: str = "FormTableBlock") -> FormTableBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["table"]]', literal(frozenset({"table"}))), path)
+    return FormTableBlock(
+        rows=required(payload, "rows", array(array(array(parse_form_span))), path),
+        header_rows=required(payload, "headerRows", decode_int, path),
+    )
+
+
+def parse_form_image_block(value: object, path: str = "FormImageBlock") -> FormImageBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["image"]]', literal(frozenset({"image"}))), path)
+    return FormImageBlock(
+        src=required(payload, "src", decode_str, path),
+        alt=required(payload, "alt", decode_str, path),
+    )
+
+
+def parse_form_svg_block(value: object, path: str = "FormSvgBlock") -> FormSvgBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["svg"]]', literal(frozenset({"svg"}))), path)
+    return FormSvgBlock(
+        markup=required(payload, "markup", decode_str, path),
+        alt=required(payload, "alt", decode_str, path),
+    )
+
+
+def parse_form_field_block(value: object, path: str = "FormFieldBlock") -> FormFieldBlock:
+    payload = expect_object(value, path)
+    required(payload, "kind", cast('Decoder[Literal["field"]]', literal(frozenset({"field"}))), path)
+    return FormFieldBlock(
+        field=required(payload, "field", parse_form_field, path),
+    )
+
+
+def parse_form_section(value: object, path: str = "FormSection") -> FormSection:
+    payload = expect_object(value, path)
+    return FormSection(
+        title=required(payload, "title", array(parse_form_span), path),
+        blocks=required(payload, "blocks", array(parse_form_block), path),
+    )
+
+
+def parse_html_form(value: object, path: str = "HtmlForm") -> HtmlForm:
+    payload = expect_object(value, path)
+    return HtmlForm(
+        sections=required(payload, "sections", array(parse_form_section), path),
+        fields=required(payload, "fields", array(parse_form_field), path),
+        hidden=required(payload, "hidden", array(array(decode_str)), path),
+    )
+
+
 def parse_select_ui_request(value: object, path: str = "SelectUiRequest") -> SelectUiRequest:
     payload = expect_object(value, path)
     required(payload, "type", cast('Decoder[Literal["extension_ui_request"]]', literal(frozenset({"extension_ui_request"}))), path)
@@ -3036,6 +3311,18 @@ def parse_ask_ui_request(value: object, path: str = "AskUiRequest") -> AskUiRequ
     return AskUiRequest(
         id=required(payload, "id", decode_str, path),
         questions=required(payload, "questions", array(parse_ask_question), path),
+        timeout=optional(payload, "timeout", decode_int, path),
+    )
+
+
+def parse_form_ui_request(value: object, path: str = "FormUiRequest") -> FormUiRequest:
+    payload = expect_object(value, path)
+    required(payload, "type", cast('Decoder[Literal["extension_ui_request"]]', literal(frozenset({"extension_ui_request"}))), path)
+    required(payload, "method", cast('Decoder[Literal["form"]]', literal(frozenset({"form"}))), path)
+    return FormUiRequest(
+        id=required(payload, "id", decode_str, path),
+        form=required(payload, "form", parse_html_form, path),
+        questions=required(payload, "questions", record(decode_str), path),
         timeout=optional(payload, "timeout", decode_int, path),
     )
 
@@ -3131,7 +3418,9 @@ def parse_extension_ui_request(value: object, path: str = "ExtensionUiRequest") 
         secret=optional(payload, "secret", decode_bool, path),
         prefill=optional(payload, "prefill", decode_str, path),
         prompt_style=optional(payload, "promptStyle", decode_bool, path),
-        questions=optional(payload, "questions", array(parse_ask_question), path),
+        questions=optional(payload, "questions", array(parse_ask_question), path) if payload.get("method") in {"ask"} else None,
+        form=optional(payload, "form", parse_html_form, path),
+        form_questions=optional(payload, "questions", record(decode_str), path) if payload.get("method") in {"form"} else None,
         target_id=optional(payload, "targetId", decode_str, path),
         notify_type=optional(payload, "notifyType", _decode_notify_type, path),
         status_key=optional(payload, "statusKey", decode_str, path),
@@ -3217,6 +3506,14 @@ def parse_rpc_agent_event(value: object, path: str = "RpcAgentEvent") -> RpcAgen
     return dispatch("type", _RPC_AGENT_EVENT_CASES)(value, path)
 
 
+def parse_form_field(value: object, path: str = "FormField") -> FormField:
+    return dispatch("kind", _FORM_FIELD_CASES)(value, path)
+
+
+def parse_form_block(value: object, path: str = "FormBlock") -> FormBlock:
+    return dispatch("kind", _FORM_BLOCK_CASES)(value, path)
+
+
 def parse_notification(value: object, path: str = "notification") -> RpcNotification:
     """Decodes one unsolicited frame; a `type` this client does not model yields `UnknownNotification`."""
     payload = expect_object(value, path)
@@ -3266,6 +3563,23 @@ _RPC_AGENT_EVENT_CASES: Final[dict[str, Decoder[RpcAgentEvent]]] = {
         "thinking_level_changed": parse_thinking_level_changed_event,
         "goal_updated": parse_goal_updated_event,
         "queue_update": parse_queue_update_event,
+}
+
+
+_FORM_FIELD_CASES: Final[dict[str, Decoder[FormField]]] = {
+        "choice": parse_form_choice_field,
+        "text": parse_form_text_field,
+}
+
+
+_FORM_BLOCK_CASES: Final[dict[str, Decoder[FormBlock]]] = {
+        "text": parse_form_text_block,
+        "list": parse_form_list_block,
+        "pre": parse_form_pre_block,
+        "table": parse_form_table_block,
+        "image": parse_form_image_block,
+        "svg": parse_form_svg_block,
+        "field": parse_form_field_block,
 }
 
 
@@ -4079,6 +4393,22 @@ __all__ = [
     "FastModeResult",
     "FileMentionItem",
     "FileMentionMessage",
+    "FormBlock",
+    "FormChoiceField",
+    "FormChoiceOption",
+    "FormField",
+    "FormFieldBlock",
+    "FormImageBlock",
+    "FormListBlock",
+    "FormPreBlock",
+    "FormSection",
+    "FormSpan",
+    "FormSpanStyle",
+    "FormSvgBlock",
+    "FormTableBlock",
+    "FormTextBlock",
+    "FormTextField",
+    "FormUiRequest",
     "GetSessionLeaseResult",
     "Goal",
     "GoalModeState",
@@ -4090,6 +4420,7 @@ __all__ = [
     "HookMessage",
     "HostToolDefinition",
     "HostUriSchemeDefinition",
+    "HtmlForm",
     "ImageContent",
     "InputUiRequest",
     "InterruptMode",
@@ -4270,6 +4601,21 @@ __all__ = [
     "parse_fast_mode_result",
     "parse_file_mention_item",
     "parse_file_mention_message",
+    "parse_form_block",
+    "parse_form_choice_field",
+    "parse_form_choice_option",
+    "parse_form_field",
+    "parse_form_field_block",
+    "parse_form_image_block",
+    "parse_form_list_block",
+    "parse_form_pre_block",
+    "parse_form_section",
+    "parse_form_span",
+    "parse_form_svg_block",
+    "parse_form_table_block",
+    "parse_form_text_block",
+    "parse_form_text_field",
+    "parse_form_ui_request",
     "parse_get_session_lease_result",
     "parse_goal",
     "parse_goal_mode_state",
@@ -4279,6 +4625,7 @@ __all__ = [
     "parse_hook_message",
     "parse_host_tool_definition",
     "parse_host_uri_scheme_definition",
+    "parse_html_form",
     "parse_image_content",
     "parse_input_ui_request",
     "parse_irc_message_event",

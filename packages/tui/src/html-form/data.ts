@@ -26,6 +26,8 @@ export interface FormAnswer {
 	name: string;
 	question: string;
 	answer: string;
+	/** Free-text remark the user attached to this answer on surfaces that offer one. */
+	note?: string;
 }
 
 /** Label of the free-text answer the UI adds to radio and checkbox groups ({@link ChoiceField.other}). */
@@ -145,17 +147,27 @@ export function fieldQuestions(form: HtmlForm): Map<FormField, string> {
 	return questions;
 }
 
-/** Answers of every named field, in form order, with option values shown as their labels. */
-export function formAnswers(form: HtmlForm, data: HtmlFormData): FormAnswer[] {
+/**
+ * Answers of every named field, in form order, with option values shown as their
+ * labels. `notes` annotate answers by field name; a note on a field the form does
+ * not name is dropped with it.
+ */
+export function formAnswers(
+	form: HtmlForm,
+	data: HtmlFormData,
+	notes?: Readonly<Record<string, string>>,
+): FormAnswer[] {
 	const questions = fieldQuestions(form);
 	const answers: FormAnswer[] = [];
 	for (const field of form.fields) {
 		if (!field.name) continue;
 		const value = data[field.name];
+		const note = notes?.[field.name];
 		answers.push({
 			name: field.name,
 			question: questions.get(field) ?? field.name,
 			answer: answerText(field, value),
+			...(note ? { note } : {}),
 		});
 	}
 	return answers;

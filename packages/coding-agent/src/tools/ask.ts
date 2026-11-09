@@ -19,6 +19,7 @@ import {
 	defaultFormData,
 	fieldQuestions,
 	fieldError,
+	type FormAnswer,
 	formAnswers,
 	type HtmlFormData,
 	OTHER_LABEL,
@@ -36,7 +37,13 @@ import { theme } from "@oh-my-pi/pi-tui/theme";
 import type { AskToolDetails } from "@oh-my-pi/pi-tui/tools/ask";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { isRecord, prompt, untilAborted } from "@oh-my-pi/pi-utils";
-import type { ExtensionUIContext, ExtensionUIDialogOptions, ExtensionUISelectItem } from "../extensibility/extensions";
+import type {
+	ExtensionFormDialogChatResult,
+	ExtensionFormDialogResult,
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	ExtensionUISelectItem,
+} from "../extensibility/extensions";
 import { askTimeoutMs, cfgAskNotify } from "../modes/settings";
 import askDescription from "../prompts/tools/ask.md" with { type: "text" };
 import askHeadlessForkMessage from "../prompts/tools/ask-headless-fork.md" with { type: "text" };
@@ -51,10 +58,25 @@ const HEADLESS_FORK_ASK_ERROR = prompt.render(askHeadlessForkMessage);
 const NO_NAMED_CONTROLS_ERROR =
 	"Error: the form has no named controls. Put at least one <input>, <select> or <textarea> with a `name` attribute inside the <form>.";
 
+/** Opens the result when the user left the form to talk the questions over instead. */
+const CHAT_REDIRECT_TEXT = "User chose to chat about this instead of answering.";
+
 // Window after the timeout deadline within which an `undefined` answer is
 // attributed to a UI-enforced timeout (for surfaces that close the dialog at
 // the deadline but never invoke `onTimeout`). Cancels beyond it are user Esc.
 const TIMEOUT_DETECTION_TOLERANCE_MS = 1_000;
+
+/**
+ * The remarks the user wrote beside their answers, appended to the answer text;
+ * empty when they wrote none. Continuation lines are indented so a multi-line
+ * note stays one list item.
+ */
+function notesText(answers: readonly FormAnswer[]): string {
+	const noted = answers.flatMap(answer =>
+		answer.note ? [`- ${answer.question}: ${answer.note.replaceAll("\n", "\n  ")}`] : [],
+	);
+	return noted.length > 0 ? `\n\nUser notes:\n${noted.join("\n")}` : "";
+}
 
 const askSchema = arkType({
 	html: arkType("string").describe("one HTML <form>"),
@@ -443,7 +465,7 @@ export class AskTool implements AgentTool<typeof askSchema, AskToolDetails> {
 			vocalizer.speak(named.map(field => questions.get(field) ?? field.name).join("\n"));
 		}
 
-		let answered: { data: HtmlFormData; timedOut?: boolean } | undefined;
+		let answered: ExtensionFormDialogResult | ExtensionFormDialogChatResult | undefined;
 		try {
 			if (extensionUi.formDialog) {
 				const formDialog = extensionUi.formDialog.bind(extensionUi);
@@ -458,18 +480,30 @@ export class AskTool implements AgentTool<typeof askSchema, AskToolDetails> {
 			throw error;
 		}
 		if (!answered) return cancelAsk();
+		if ("chat" in answered) {
+			const asked = named.map(field => questions.get(field) ?? field.name);
+			return {
+				content: [{ type: "text", text: `${CHAT_REDIRECT_TEXT}\n\nQuestions asked:\n${asked.join("\n")}` }],
+				details: { answers: [], chatRedirect: true },
+			};
+		}
 
 		const json = JSON.stringify(answered.data, null, 2);
-		const details: AskToolDetails = { answers: formAnswers(form, answered.data) };
+		const answers = formAnswers(form, answered.data, answered.notes);
+		const details: AskToolDetails = { answers };
+		const notes = notesText(answers);
 		if (answered.timedOut) {
 			details.timedOut = true;
 			return {
 				content: [
-					{ type: "text", text: `No answer before the timeout; submitted the form's current values:\n${json}` },
+					{
+						type: "text",
+						text: `No answer before the timeout; submitted the form's current values:\n${json}${notes}`,
+					},
 				],
 				details,
 			};
 		}
-		return { content: [{ type: "text", text: `User answers:\n${json}` }], details };
+		return { content: [{ type: "text", text: `User answers:\n${json}${notes}` }], details };
 	}
 }

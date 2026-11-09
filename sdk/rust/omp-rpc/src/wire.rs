@@ -4530,6 +4530,234 @@ pub struct AskQuestion {
 	pub recommended: Option<i64>,
 }
 
+/// Inline emphasis a run of form text keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum FormSpanStyle {
+	#[serde(rename = "code")]
+	Code,
+	#[serde(rename = "strong")]
+	Strong,
+	#[serde(rename = "em")]
+	Em,
+}
+
+impl FormSpanStyle {
+	/// Wire value.
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::Code => "code",
+			Self::Strong => "strong",
+			Self::Em => "em",
+		}
+	}
+}
+
+/// A run of inline form text; a newline inside `text` is a hard line break.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormSpan {
+	pub text: String,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub style: Option<FormSpanStyle>,
+}
+
+/// One answer of a choice field; `value` is what an answer reports.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormChoiceOption {
+	pub value: String,
+	pub label: Vec<FormSpan>,
+	pub checked: bool,
+	pub disabled: bool,
+}
+
+/// A radio group (`multi: false`), a checkbox group (`multi: true`) or a `<select>` (`select: true`). With `other`, the host offers a free-text answer besides the options.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormChoiceField {
+	pub name: String,
+	pub multi: bool,
+	pub select: bool,
+	pub other: bool,
+	pub label: Vec<FormSpan>,
+	pub options: Vec<FormChoiceOption>,
+	pub required: bool,
+}
+
+/// A single-line `<input>` (`multiline: false`) or a `<textarea>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormTextField {
+	pub name: String,
+	/// The `<input type>` (`text`, `number`, `url`, …); `textarea` for textareas.
+	pub r#type: String,
+	pub multiline: bool,
+	pub label: Vec<FormSpan>,
+	pub value: String,
+	pub placeholder: String,
+	pub required: bool,
+	/// Visible rows a textarea asked for; 1 for inputs.
+	pub rows: i64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub min: Option<f64>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub max: Option<f64>,
+	/// Anchored as HTML does: the answer must match `^(?:pattern)$`.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub pattern: Option<String>,
+	#[serde(rename = "minLength", default, skip_serializing_if = "Option::is_none")]
+	pub min_length: Option<i64>,
+	#[serde(rename = "maxLength", default, skip_serializing_if = "Option::is_none")]
+	pub max_length: Option<i64>,
+}
+
+/// A control the user answers, discriminated by `kind`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FormField {
+	/// A radio group (`multi: false`), a checkbox group (`multi: true`) or a `<select>` (`select: true`). With `other`, the host offers a free-text answer besides the options.
+	Choice(FormChoiceField),
+	/// A single-line `<input>` (`multiline: false`) or a `<textarea>`.
+	Text(FormTextField),
+}
+
+impl FormField {
+	/// Decodes from JSON, dispatching on `kind`.
+	pub fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+		let decode: fn(Value) -> Result<Self, serde_json::Error> = match value.get("kind").and_then(Value::as_str) {
+			Some("choice") => |value| serde_json::from_value(value).map(Self::Choice),
+			Some("text") => |value| serde_json::from_value(value).map(Self::Text),
+			other => {
+				return Err(serde_json::Error::custom(format!("unknown FormField kind {other:?}")));
+			}
+		};
+		decode(value)
+	}
+}
+
+impl Serialize for FormField {
+	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		match self {
+			Self::Choice(member) => serialize_tagged(member, &[("kind", "choice")], serializer),
+			Self::Text(member) => serialize_tagged(member, &[("kind", "text")], serializer),
+		}
+	}
+}
+
+impl<'de> Deserialize<'de> for FormField {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		Self::from_value(Value::deserialize(deserializer)?).map_err(D::Error::custom)
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormTextBlock {
+	pub spans: Vec<FormSpan>,
+	pub heading: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormListBlock {
+	pub items: Vec<Vec<FormSpan>>,
+	pub ordered: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormPreBlock {
+	pub text: String,
+}
+
+/// A table as rows of cells, each cell a run of spans; the first `headerRows` rows are headers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormTableBlock {
+	pub rows: Vec<Vec<Vec<FormSpan>>>,
+	#[serde(rename = "headerRows")]
+	pub header_rows: i64,
+}
+
+/// A picture as a `data:` URL, empty when it could not be loaded; show `alt` in its place.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormImageBlock {
+	pub src: String,
+	pub alt: String,
+}
+
+/// An inline `<svg>`, serialized whole. Model-written markup: render it as an image source, never as markup in the host's own document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormSvgBlock {
+	pub markup: String,
+	pub alt: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormFieldBlock {
+	pub field: FormField,
+}
+
+/// One renderable unit of a form section, in document order, discriminated by `kind`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FormBlock {
+	Text(FormTextBlock),
+	List(FormListBlock),
+	Pre(FormPreBlock),
+	/// A table as rows of cells, each cell a run of spans; the first `headerRows` rows are headers.
+	Table(FormTableBlock),
+	/// A picture as a `data:` URL, empty when it could not be loaded; show `alt` in its place.
+	Image(FormImageBlock),
+	/// An inline `<svg>`, serialized whole. Model-written markup: render it as an image source, never as markup in the host's own document.
+	Svg(FormSvgBlock),
+	Field(FormFieldBlock),
+}
+
+impl FormBlock {
+	/// Decodes from JSON, dispatching on `kind`.
+	pub fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+		let decode: fn(Value) -> Result<Self, serde_json::Error> = match value.get("kind").and_then(Value::as_str) {
+			Some("text") => |value| serde_json::from_value(value).map(Self::Text),
+			Some("list") => |value| serde_json::from_value(value).map(Self::List),
+			Some("pre") => |value| serde_json::from_value(value).map(Self::Pre),
+			Some("table") => |value| serde_json::from_value(value).map(Self::Table),
+			Some("image") => |value| serde_json::from_value(value).map(Self::Image),
+			Some("svg") => |value| serde_json::from_value(value).map(Self::Svg),
+			Some("field") => |value| serde_json::from_value(value).map(Self::Field),
+			other => {
+				return Err(serde_json::Error::custom(format!("unknown FormBlock kind {other:?}")));
+			}
+		};
+		decode(value)
+	}
+}
+
+impl Serialize for FormBlock {
+	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		match self {
+			Self::Text(member) => serialize_tagged(member, &[("kind", "text")], serializer),
+			Self::List(member) => serialize_tagged(member, &[("kind", "list")], serializer),
+			Self::Pre(member) => serialize_tagged(member, &[("kind", "pre")], serializer),
+			Self::Table(member) => serialize_tagged(member, &[("kind", "table")], serializer),
+			Self::Image(member) => serialize_tagged(member, &[("kind", "image")], serializer),
+			Self::Svg(member) => serialize_tagged(member, &[("kind", "svg")], serializer),
+			Self::Field(member) => serialize_tagged(member, &[("kind", "field")], serializer),
+		}
+	}
+}
+
+impl<'de> Deserialize<'de> for FormBlock {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		Self::from_value(Value::deserialize(deserializer)?).map_err(D::Error::custom)
+	}
+}
+
+/// A `<fieldset>` titled by its `<legend>`, or untitled loose content between fieldsets.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormSection {
+	pub title: Vec<FormSpan>,
+	pub blocks: Vec<FormBlock>,
+}
+
+/// A parsed `ask` form: what to draw, its fields in document order, and its hidden inputs as `[name, value]` pairs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HtmlForm {
+	pub sections: Vec<FormSection>,
+	pub fields: Vec<FormField>,
+	pub hidden: Vec<Vec<String>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SelectUiRequest {
 	pub id: String,
@@ -4577,6 +4805,17 @@ pub struct EditorUiRequest {
 pub struct AskUiRequest {
 	pub id: String,
 	pub questions: Vec<AskQuestion>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub timeout: Option<i64>,
+}
+
+/// One `ask` tool call as a parsed form; sent only after `set_ask_dialog` enables it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormUiRequest {
+	pub id: String,
+	pub form: HtmlForm,
+	/// What each named field asks, keyed by field name.
+	pub questions: BTreeMap<String, String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub timeout: Option<i64>,
 }
@@ -4649,6 +4888,8 @@ pub enum ExtensionUiRequest {
 	Editor(EditorUiRequest),
 	/// Every question of one `ask` tool call; sent only after `set_ask_dialog` enables it.
 	Ask(AskUiRequest),
+	/// One `ask` tool call as a parsed form; sent only after `set_ask_dialog` enables it.
+	Form(FormUiRequest),
 	/// Close the dialog opened by request `targetId`; a later answer to it is ignored.
 	Cancel(CancelUiRequest),
 	Notify(NotifyUiRequest),
@@ -4668,6 +4909,7 @@ impl ExtensionUiRequest {
 			Some("input") => |value| serde_json::from_value(value).map(Self::Input),
 			Some("editor") => |value| serde_json::from_value(value).map(Self::Editor),
 			Some("ask") => |value| serde_json::from_value(value).map(Self::Ask),
+			Some("form") => |value| serde_json::from_value(value).map(Self::Form),
 			Some("cancel") => |value| serde_json::from_value(value).map(Self::Cancel),
 			Some("notify") => |value| serde_json::from_value(value).map(Self::Notify),
 			Some("setStatus") => |value| serde_json::from_value(value).map(Self::SetStatus),
@@ -4691,6 +4933,7 @@ impl Serialize for ExtensionUiRequest {
 			Self::Input(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "input")], serializer),
 			Self::Editor(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "editor")], serializer),
 			Self::Ask(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "ask")], serializer),
+			Self::Form(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "form")], serializer),
 			Self::Cancel(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "cancel")], serializer),
 			Self::Notify(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "notify")], serializer),
 			Self::SetStatus(member) => serialize_tagged(member, &[("type", "extension_ui_request"), ("method", "setStatus")], serializer),
@@ -4719,6 +4962,17 @@ pub struct AskAnswer {
 	/// Free-text annotation; dropped when blank or when the answer carries no choice at all.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub note: Option<String>,
+}
+
+/// One control's answer: its text, a number for non-empty `number`/`range` inputs, or the chosen values of a checkbox group or multi-select.
+///
+/// Untagged union: the first variant that decodes wins.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FormValue {
+	String(String),
+	Number(f64),
+	StringList(Vec<String>),
 }
 
 /// Answers a `select`, `input`, or `editor` request.
@@ -4751,11 +5005,22 @@ pub struct AnswersUiResponse {
 	pub answers: Vec<AskAnswer>,
 }
 
-/// Leaves an `ask` request unanswered: the user chose "Chat about this" instead.
+/// Leaves an `ask` or `form` request unanswered: the user chose "Chat about this" instead.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatUiResponse {
 	pub id: String,
 	pub chat: LitTrue,
+}
+
+/// Answers a `form` request. A control left unanswered is absent; hidden inputs are not sent back.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormDataUiResponse {
+	pub id: String,
+	/// Each answered control's value, keyed by its `name`.
+	pub data: BTreeMap<String, FormValue>,
+	/// Free-text remarks beside the answers, keyed by field name; blank ones and ones on unanswered fields are dropped.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub notes: Option<BTreeMap<String, String>>,
 }
 
 /// Host reply to an extension UI request; variants share `type` and differ by their payload key.
@@ -4769,8 +5034,10 @@ pub enum ExtensionUiResponse {
 	CancelUiResponse(CancelUiResponse),
 	/// Answers an `ask` request: one `AskAnswer` per question, in question order.
 	AnswersUiResponse(AnswersUiResponse),
-	/// Leaves an `ask` request unanswered: the user chose "Chat about this" instead.
+	/// Leaves an `ask` or `form` request unanswered: the user chose "Chat about this" instead.
 	ChatUiResponse(ChatUiResponse),
+	/// Answers a `form` request. A control left unanswered is absent; hidden inputs are not sent back.
+	FormDataUiResponse(FormDataUiResponse),
 }
 
 impl ExtensionUiResponse {
@@ -4791,6 +5058,9 @@ impl ExtensionUiResponse {
 		if let Ok(member) = ChatUiResponse::deserialize(&value) {
 			return Ok(Self::ChatUiResponse(member));
 		}
+		if let Ok(member) = FormDataUiResponse::deserialize(&value) {
+			return Ok(Self::FormDataUiResponse(member));
+		}
 		Err(serde_json::Error::custom("no ExtensionUiResponse variant matches"))
 	}
 }
@@ -4803,6 +5073,7 @@ impl Serialize for ExtensionUiResponse {
 			Self::CancelUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
 			Self::AnswersUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
 			Self::ChatUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
+			Self::FormDataUiResponse(member) => serialize_tagged(member, &[("type", "extension_ui_response")], serializer),
 		}
 	}
 }

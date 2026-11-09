@@ -915,7 +915,7 @@ class RpcClient(WireClient):
                 else:
                     self.cancel_ui_request(request.id)
                 return
-            if request.method == "ask":
+            if request.method in ("ask", "form"):
                 self.cancel_ui_request(request.id)
 
         return self.on_ui_request(handle)

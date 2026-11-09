@@ -31,6 +31,13 @@ interface PythonBinding {
 	fieldNames: Record<string, string>;
 	/** Union definitions emitted as one record (all variant fields optional) with a mixin base. */
 	flatten: Record<string, { discriminator: string; methodAlias: string; base: string; baseModule: string }>;
+	/**
+	 * Attribute name for a flattened-union key two variants type differently
+	 * (`ask` sends `questions` as a question list, `form` as a field → question
+	 * map). Both attributes read the same wire key, each only on its own variant.
+	 * `Def.key` → attribute name.
+	 */
+	flattenVariantFields: Record<string, string>;
 	/** Commands `RpcClient` implements by hand (prompt correlation, registries, paging). */
 	handwrittenCommands: string[];
 	/** `command.key` string params that accept `pathlib.Path`. */
@@ -57,6 +64,7 @@ const PYTHON_BINDING: PythonBinding = {
 			baseModule: "._extension_ui",
 		},
 	},
+	flattenVariantFields: { "FormUiRequest.questions": "form_questions" },
 	handwrittenCommands: [
 		"negotiate_protocol",
 		"prompt",
@@ -152,6 +160,10 @@ class PythonEmitter {
 	readonly #exports: string[] = [];
 	readonly #emitted: Set<string>;
 	readonly #flattenMethods = new Map<string, string[]>();
+	/** Attribute name of a flattened-union field, where its wire key alone does not name it. */
+	readonly #fieldAttributes = new Map<WireField, string>();
+	/** Flattened-union fields sharing a wire key: each decodes only for the variants that send its shape. */
+	readonly #fieldGuards = new Map<WireField, { property: string; methods: string[] }>();
 	/** Python-only definitions (method aliases of flattened unions). */
 	readonly #synthetic = new Map<string, WireDef>();
 	#usesPath = false;
@@ -412,7 +424,7 @@ class PythonEmitter {
 		this.#exports.push(def.name);
 		const lines: string[] = [];
 		for (const field of def.fields) {
-			const name = this.#fieldName(def.name, field.key);
+			const name = this.#fieldAttributes.get(field) ?? this.#fieldName(def.name, field.key);
 			const { annotation } = this.#fieldDecoder(def.name, field);
 			const fieldDoc = docstring(field.doc, "    ");
 			if (field.required && field.type.kind === "literal") {
@@ -451,22 +463,27 @@ class PythonEmitter {
 		const checks: string[] = [];
 		const args: string[] = [];
 		for (const field of def.fields) {
-			const name = this.#fieldName(def.name, field.key);
+			const name = this.#fieldAttributes.get(field) ?? this.#fieldName(def.name, field.key);
 			const { decoder } = this.#fieldDecoder(def.name, field);
+			// A key the variants type differently is read only on the variants that send this shape.
+			const guard = this.#fieldGuards.get(field);
+			const only = guard
+				? ` if payload.get(${pyString(guard.property)}) in {${guard.methods.map(pyString).join(", ")}} else None`
+				: "";
 			if (field.required && field.type.kind === "literal") {
 				this.#runtime.add("required");
 				checks.push(`    required(payload, ${pyString(field.key)}, ${decoder}, path)\n`);
 			} else if (field.required) {
 				this.#runtime.add("required");
-				args.push(`        ${name}=required(payload, ${pyString(field.key)}, ${decoder}, path),\n`);
+				args.push(`        ${name}=required(payload, ${pyString(field.key)}, ${decoder}, path)${only},\n`);
 			} else if (field.hasDefault) {
 				this.#runtime.add("defaulted");
 				args.push(
-					`        ${name}=defaulted(payload, ${pyString(field.key)}, ${decoder}, path, ${this.#defaultValue(field)}),\n`,
+					`        ${name}=defaulted(payload, ${pyString(field.key)}, ${decoder}, path, ${this.#defaultValue(field)})${only},\n`,
 				);
 			} else {
 				this.#runtime.add("optional");
-				args.push(`        ${name}=optional(payload, ${pyString(field.key)}, ${decoder}, path),\n`);
+				args.push(`        ${name}=optional(payload, ${pyString(field.key)}, ${decoder}, path)${only},\n`);
 			}
 		}
 		return `def parse_${snake(def.name)}(value: object, path: str = ${pyString(def.name)}) -> ${def.name}:\n    payload = expect_object(value, path)\n${checks.join("")}    return ${def.name}(\n${args.join("")}    )\n`;
@@ -481,22 +498,44 @@ class PythonEmitter {
 		return pyLiteral(value);
 	}
 
-	/** Merges a union's variants into one record whose variant-specific fields are optional. */
+	/**
+	 * Merges a union's variants into one record whose variant-specific fields are
+	 * optional. A key two variants type differently keeps one attribute per shape,
+	 * each decoded only when the discriminator says that variant sent it.
+	 */
 	#flattenedDef(name: string): Extract<WireDef, { kind: "object" }> {
 		const leaves = unionLeaves(this.#model, name).map(leaf => this.#def(leaf));
-		const merged = new Map<string, WireField>();
+		const merged = new Map<string, { field: WireField; methods: string[]; attribute: string }>();
 		const presence = new Map<string, number>();
 		const discriminator = this.#binding.flatten[name].discriminator;
 		for (const leaf of leaves) {
 			if (leaf.kind !== "object") throw new Error(`${name}: flattened member ${leaf.name} is not an object`);
+			const method = constantOf(leaf, discriminator) ?? "";
 			for (const field of leaf.fields) {
-				presence.set(field.key, (presence.get(field.key) ?? 0) + (field.required ? 1 : 0));
-				const known = merged.get(field.key);
 				if (field.key === discriminator) continue;
-				if (known && JSON.stringify(known.type) !== JSON.stringify(field.type)) {
-					throw new Error(`${name}.${field.key}: variants disagree on the type`);
+				presence.set(field.key, (presence.get(field.key) ?? 0) + (field.required ? 1 : 0));
+				const shape = JSON.stringify(field.type);
+				const known = [...merged.values()].find(
+					entry => entry.field.key === field.key && JSON.stringify(entry.field.type) === shape,
+				);
+				if (known) {
+					known.methods.push(method);
+					continue;
 				}
-				if (!known) merged.set(field.key, { ...field, required: false, hasDefault: false });
+				const conflict = merged.has(field.key);
+				const attribute = conflict
+					? this.#binding.flattenVariantFields[`${leaf.name}.${field.key}`]
+					: this.#fieldName(name, field.key);
+				if (!attribute) {
+					throw new Error(
+						`${name}.${field.key}: variants disagree on the type; name ${leaf.name}.${field.key} in flattenVariantFields`,
+					);
+				}
+				merged.set(conflict ? attribute : field.key, {
+					field: { ...field, required: false, hasDefault: false },
+					methods: [method],
+					attribute,
+				});
 			}
 		}
 		const methods = leaves.map(leaf => constantOf(leaf, discriminator) ?? "");
@@ -506,8 +545,15 @@ class PythonEmitter {
 		const fields: WireField[] = [
 			{ key: discriminator, type: { kind: "ref", name: alias }, required: true, hasDefault: false },
 		];
-		for (const [key, field] of merged) {
-			fields.push({ ...field, required: presence.get(key) === leaves.length });
+		const shapesPerKey = new Map<string, number>();
+		for (const { field } of merged.values()) shapesPerKey.set(field.key, (shapesPerKey.get(field.key) ?? 0) + 1);
+		for (const { field, methods: carriers, attribute } of merged.values()) {
+			const emitted = { ...field, required: presence.get(field.key) === leaves.length };
+			this.#fieldAttributes.set(emitted, attribute);
+			if ((shapesPerKey.get(field.key) ?? 0) > 1) {
+				this.#fieldGuards.set(emitted, { property: discriminator, methods: carriers });
+			}
+			fields.push(emitted);
 		}
 		const def = this.#def(name);
 		return { name, doc: def.doc, kind: "object", fields, open: false };

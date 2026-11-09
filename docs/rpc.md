@@ -736,12 +736,14 @@ The corresponding `get_state` result reports the same computed state:
 
 ### `set_ask_dialog` payload
 
-`set_ask_dialog` opts the host in to the `ask` extension UI request (see
-[Extension UI Sub-Protocol](#extension-ui-sub-protocol)). It is off by default
-for every process; until a host enables it, the `ask` tool keeps prompting with
-one `select` (plus `editor` for free text) per choice. Builds without the
-command answer with a failed `response`, so hosts should keep the `select`
-fallback when enabling fails.
+`set_ask_dialog` opts the host in to the `ask` and `form` extension UI requests
+(see [Extension UI Sub-Protocol](#extension-ui-sub-protocol)): `ask` for an
+extension's `ui.askDialog`, `form` for the `ask` tool's own HTML form. It is off
+by default for every process; until a host enables it, extensions get no `ask`
+dialog and the `ask` tool walks its form field by field with one `select` (plus
+`editor` for free text) per control. Builds without the command answer with a
+failed `response`, so hosts should keep the `select` fallback when enabling
+fails.
 
 ```json
 { "id": "req_ask", "type": "set_ask_dialog", "enabled": true }
@@ -1315,7 +1317,7 @@ Use `--mode rpc --no-ui` for a host without a tool UI surface; use `--mode rpc-u
 
 `RpcExtensionUIRequest` (`type: "extension_ui_request"`) methods:
 
-- `select`, `confirm`, `input`, `editor`, `ask`, `cancel`
+- `select`, `confirm`, `input`, `editor`, `ask`, `form`, `cancel`
    - `select` keeps labels in `options: string[]` and, when any option has a
      description, emits a positionally aligned
      `optionDetails: Array<{ description?: string }>` array. Hosts that do not
@@ -1330,6 +1332,18 @@ Use `--mode rpc --no-ui` for a host without a tool UI surface; use `--mode rpc-u
      `questions: Array<{ id: string, question: string, header?: string, options: Array<{ label: string, description?: string, preview?: string }>, multi?: boolean, recommended?: number }>`
      plus `timeout?: number`. `options` never include an "Other" entry; hosts
      always offer free text.
+   - `form` is emitted only after `set_ask_dialog` enables it, and carries one
+     `ask` tool call as the form the model wrote: `form` (its HTML parsed into
+     sections, blocks, fields and `hidden` `[name, value]` pairs), `questions`
+     (what each named field asks, keyed by field name) and `timeout?: number`.
+     Hosts that never opt in keep the field-by-field `select`/`input`/`editor`
+     walk. `<img>` sources arrive inlined as `data:` URLs, empty when the
+     picture could not be read (show its `alt` instead). `svg` blocks carry the
+     model's own markup: render it as an image source
+     (`data:image/svg+xml;base64,…`), never as markup in the host's document.
+     All form text arrives as plain spans
+     (`{ text, style?: "code" | "strong" | "em" }`, a newline being a hard
+     break), so no part of a form is host-side HTML.
 - `notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`
 - `open_url` (emitted by RPC login flows): includes `url`, optional `launchUrl`, and optional `instructions`. When present, `launchUrl` is a short loopback redirect and is the recommended copy target so terminal truncation cannot corrupt OAuth query parameters.
 
@@ -1361,7 +1375,8 @@ Example:
 - `{ type: "extension_ui_response", id: string, confirmed: boolean }`
 - `{ type: "extension_ui_response", id: string, cancelled: true, timedOut?: boolean }`
 - `{ type: "extension_ui_response", id: string, answers: Array<{ id: string, selectedOptions: string[], customInput?: string, note?: string }> }` (answers an `ask` request)
-- `{ type: "extension_ui_response", id: string, chat: true }` (user chose "Chat about this" instead of answering an `ask` request)
+- `{ type: "extension_ui_response", id: string, data: Record<string, string | number | string[]>, notes?: Record<string, string> }` (answers a `form` request)
+- `{ type: "extension_ui_response", id: string, chat: true }` (user chose "Chat about this" instead of answering an `ask` or `form` request)
 
 `select` and `input` resolve to `undefined`, and `confirm` to `false`, on
 cancellation, timeout, or signal abort. Signal abort emits a `cancel` request
@@ -1379,6 +1394,20 @@ option, else its first.
 is trimmed and ignored when empty. `note` is an optional free-text annotation on that answer; it is trimmed,
 dropped when blank, and dropped when the answer has no `selectedOptions` and no `customInput`. Any other
 shape fails the `ask` tool call instead of guessing.
+
+`data` answers a `form` request by control `name`: a radio or single select gives
+the chosen option's `value`, a checkbox group or multi-select an array of them, a
+lone checkbox its value (omit the key when unchecked), and a text field its text
+(a number for non-empty `number`/`range` inputs). Omit a control the user left
+unanswered, never send a disabled option, and never send back the form's hidden
+inputs: omp merges those itself. A value the field does not offer counts as the
+user's own answer when the field takes free text (`other`), and is dropped
+otherwise, as is a name the form does not have. `notes` are free-text remarks by
+field name; they are trimmed, dropped when blank, and dropped for a field with no
+answer. An answer the form itself refuses (a missing required field, a number out
+of range, a pattern mismatch) fails the `ask` tool call instead of guessing. A
+timeout (omp's timer or a host `cancelled: true, timedOut: true` reply) submits
+the form's own current values.
 
 ```json
 {
@@ -1410,6 +1439,71 @@ shape fails the `ask` tool call instead of guessing.
 		{ "id": "db", "selectedOptions": [], "customInput": "DuckDB" },
 		{ "id": "features", "selectedOptions": ["Auth", "Search"] }
 	]
+}
+```
+
+Each field appears twice in a `form`: inside the section that draws it, and in
+`fields`, which lists every control in document order (the same objects).
+
+```json
+{
+	"type": "extension_ui_request",
+	"id": "ui_12",
+	"method": "form",
+	"form": {
+		"sections": [
+			{
+				"title": [{ "text": "Session store" }],
+				"blocks": [
+					{
+						"kind": "text",
+						"spans": [{ "text": "Sessions live in memory today." }],
+						"heading": false
+					},
+					{
+						"kind": "field",
+						"field": {
+							"kind": "text",
+							"name": "ttl_days",
+							"type": "number",
+							"multiline": false,
+							"label": [{ "text": "Session lifetime (days)" }],
+							"value": "30",
+							"placeholder": "",
+							"required": false,
+							"min": 1,
+							"rows": 1
+						}
+					}
+				]
+			}
+		],
+		"fields": [
+			{
+				"kind": "text",
+				"name": "ttl_days",
+				"type": "number",
+				"multiline": false,
+				"label": [{ "text": "Session lifetime (days)" }],
+				"value": "30",
+				"placeholder": "",
+				"required": false,
+				"min": 1,
+				"rows": 1
+			}
+		],
+		"hidden": [["ticket", "PI-7"]]
+	},
+	"questions": { "ttl_days": "Session lifetime (days)" }
+}
+```
+
+```json
+{
+	"type": "extension_ui_response",
+	"id": "ui_12",
+	"data": { "ttl_days": 14 },
+	"notes": { "ttl_days": "Two weeks matches our support window" }
 }
 ```
 

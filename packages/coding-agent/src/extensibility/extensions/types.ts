@@ -188,6 +188,13 @@ export type { HtmlFormData, HtmlFormValue } from "@oh-my-pi/pi-tui/html-form/dat
 export interface ExtensionFormDialogResult {
 	data: HtmlFormData;
 	timedOut?: boolean;
+	/** Free-text remarks the user wrote beside their answers, by field name; only surfaces that offer them send any. */
+	notes?: Record<string, string>;
+}
+
+/** The user left a {@link ExtensionUIContext.formDialog} unanswered to talk the form over in chat instead. */
+export interface ExtensionFormDialogChatResult {
+	chat: true;
 }
 
 export function getExtensionUISelectOptionLabel(option: ExtensionUISelectItem): string {
@@ -356,10 +363,15 @@ export interface ExtensionUIContext {
 	/**
 	 * Show an HTML `<form>` (see `@oh-my-pi/pi-tui/html-form/parse`) as an interactive form and
 	 * resolve its data on submit, `undefined` on cancel. With `timeout`, the form's current values
-	 * submit when it elapses (`timedOut: true`); input resets the countdown. Absent on hosts that
-	 * cannot draw a form; callers then fall back to field-by-field `select`/`input`/`editor`.
+	 * submit when it elapses (`timedOut: true`); input resets the countdown. A surface that offers
+	 * it may answer `{ chat: true }` instead: the user wants to talk the form over rather than fill
+	 * it in. Absent on hosts that cannot draw a form; callers then fall back to field-by-field
+	 * `select`/`input`/`editor`.
 	 */
-	formDialog?(html: string, dialogOptions?: ExtensionUIDialogOptions): Promise<ExtensionFormDialogResult | undefined>;
+	formDialog?(
+		html: string,
+		dialogOptions?: ExtensionUIDialogOptions,
+	): Promise<ExtensionFormDialogResult | ExtensionFormDialogChatResult | undefined>;
 
 	/**
 	 * Show a tool-approval prompt; anything but an explicit approval is `deny`, `session` only when

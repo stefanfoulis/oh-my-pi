@@ -33,6 +33,8 @@ export interface AskToolDetails {
 	answers: FormAnswer[];
 	/** The deadline submitted the form's current values instead of the user. */
 	timedOut?: boolean;
+	/** The user chose to chat about the form instead of answering it; `answers` is then empty. */
+	chatRedirect?: boolean;
 }
 
 // =============================================================================
@@ -45,6 +47,7 @@ interface AskRenderArgs {
 }
 
 const TIMED_OUT_NOTE = "auto-selected after timeout — not a user choice";
+const CHAT_REDIRECT_NOTE = "chose to chat about this instead of answering";
 const NO_ANSWER = "(no answer)";
 
 /**
@@ -89,9 +92,14 @@ function detailsAnswers(details: AskToolDetails | undefined): FormAnswer[] | und
 	const answers: FormAnswer[] = [];
 	for (const entry of raw) {
 		if (!isRecord(entry)) continue;
-		const { name, question, answer } = entry;
+		const { name, question, answer, note } = entry;
 		if (typeof question !== "string" || typeof answer !== "string") continue;
-		answers.push({ name: typeof name === "string" ? name : "", question, answer });
+		answers.push({
+			name: typeof name === "string" ? name : "",
+			question,
+			answer,
+			...(typeof note === "string" && note.trim() ? { note } : {}),
+		});
 	}
 	return answers;
 }
@@ -218,12 +226,24 @@ function describeAnswer(answer: FormAnswer, shown: string, key: string): NativeN
 				role: "omp.tool.answer",
 			})
 		: text([span(NO_ANSWER, "dim")], { role: "omp.tool.answer.off" });
-	return node("section", {}, [text([span(oneLine(answer.question))], { wrap: "word" }), body], key);
+	const note = answer.note ? text([span(clean(answer.note), "muted")], { wrap: "word" }) : undefined;
+	return node(
+		"section",
+		{},
+		compact<NativeChild>([text([span(oneLine(answer.question))], { wrap: "word" }), body, note]),
+		key,
+	);
 }
 
 function describeAskResult(result: ToolRenderResult<AskToolDetails>, args: AskRenderArgs | undefined): NativeToolView {
 	const answers = detailsAnswers(result.details);
 	const form = argsForm(args);
+	if (result.details?.chatRedirect === true) {
+		return {
+			tool: askHead(namedQuestions(form)[0]),
+			body: [text([span(CHAT_REDIRECT_NOTE, "muted")], { wrap: "word", role: "omp.tool.notice" })],
+		};
+	}
 	if (!answers) {
 		const fallback = clean(resultText(result));
 		return {
@@ -282,6 +302,13 @@ export const askToolRenderer = {
 		args?: AskRenderArgs,
 	): Component {
 		const answers = detailsAnswers(result.details);
+		if (result.details?.chatRedirect === true) {
+			const header = renderStatusLine(
+				{ iconOverride: uiTheme.styledSymbol("tool.ask", "accent"), title: "Ask" },
+				uiTheme,
+			);
+			return new Text(`${header}\n${uiTheme.fg("dim", CHAT_REDIRECT_NOTE)}`, 0, 0);
+		}
 		if (!answers) {
 			const txt = result.content[0];
 			const fallback = txt?.type === "text" && txt.text ? clean(txt.text) : "";
@@ -302,6 +329,9 @@ export const askToolRenderer = {
 			const content = answers.flatMap((answer, index) => [
 				...wrapPrefixedLine(" ", " ", uiTheme.fg("text", oneLine(answer.question)), contentWidth),
 				...answerLines(uiTheme, shown[index]!, contentWidth, options.expanded),
+				...(answer.note
+					? wrapPrefixedLine("   ", "   ", uiTheme.fg("dim", oneLine(answer.note)), contentWidth)
+					: []),
 			]);
 			// Distinguish the deadline's submission from a real user choice in the transcript.
 			if (timedOut) content.push(...wrapPrefixedLine(" ", " ", uiTheme.fg("dim", TIMED_OUT_NOTE), contentWidth));

@@ -159,6 +159,76 @@ export const frameDefs = {
 		},
 		"One question of an `ask` request; hosts always offer free text besides `options`.",
 	),
+	FormSpanStyle: doc("'code' | 'strong' | 'em'", "Inline emphasis a run of form text keeps."),
+	FormSpan: doc(
+		{ text: "string", "style?": "FormSpanStyle" },
+		"A run of inline form text; a newline inside `text` is a hard line break.",
+	),
+	FormChoiceOption: doc(
+		{ value: "string", label: "FormSpan[]", checked: "boolean", disabled: "boolean" },
+		"One answer of a choice field; `value` is what an answer reports.",
+	),
+	FormChoiceField: doc(
+		{
+			kind: "'choice'",
+			name: "string",
+			multi: "boolean",
+			select: "boolean",
+			other: "boolean",
+			label: "FormSpan[]",
+			options: "FormChoiceOption[]",
+			required: "boolean",
+		},
+		"A radio group (`multi: false`), a checkbox group (`multi: true`) or a `<select>` (`select: true`). With `other`, the host offers a free-text answer besides the options.",
+	),
+	FormTextField: doc(
+		{
+			kind: "'text'",
+			name: "string",
+			type: doc("string", "The `<input type>` (`text`, `number`, `url`, …); `textarea` for textareas."),
+			multiline: "boolean",
+			label: "FormSpan[]",
+			value: "string",
+			placeholder: "string",
+			required: "boolean",
+			"min?": "number",
+			"max?": "number",
+			"pattern?": doc("string", "Anchored as HTML does: the answer must match `^(?:pattern)$`."),
+			"minLength?": "number.integer",
+			"maxLength?": "number.integer",
+			rows: doc("number.integer", "Visible rows a textarea asked for; 1 for inputs."),
+		},
+		"A single-line `<input>` (`multiline: false`) or a `<textarea>`.",
+	),
+	FormField: doc("FormChoiceField | FormTextField", "A control the user answers, discriminated by `kind`."),
+	FormTextBlock: { kind: "'text'", spans: "FormSpan[]", heading: "boolean" },
+	FormListBlock: { kind: "'list'", items: "FormSpan[][]", ordered: "boolean" },
+	FormPreBlock: { kind: "'pre'", text: "string" },
+	FormTableBlock: doc(
+		{ kind: "'table'", rows: "FormSpan[][][]", headerRows: "number.integer" },
+		"A table as rows of cells, each cell a run of spans; the first `headerRows` rows are headers.",
+	),
+	FormImageBlock: doc(
+		{ kind: "'image'", src: "string", alt: "string" },
+		"A picture as a `data:` URL, empty when it could not be loaded; show `alt` in its place.",
+	),
+	FormSvgBlock: doc(
+		{ kind: "'svg'", markup: "string", alt: "string" },
+		"An inline `<svg>`, serialized whole. Model-written markup: render it as an image source, never as markup in the host's own document.",
+	),
+	FormFieldBlock: { kind: "'field'", field: "FormField" },
+	FormBlock: doc(
+		"FormTextBlock | FormListBlock | FormPreBlock | FormTableBlock | FormImageBlock | FormSvgBlock | FormFieldBlock",
+		"One renderable unit of a form section, in document order, discriminated by `kind`.",
+	),
+	FormSection: doc(
+		{ title: "FormSpan[]", blocks: "FormBlock[]" },
+		"A `<fieldset>` titled by its `<legend>`, or untitled loose content between fieldsets.",
+	),
+	HtmlForm: doc(
+		{ sections: "FormSection[]", fields: "FormField[]", hidden: "string[][]" },
+		"A parsed `ask` form: what to draw, its fields in document order, and its hidden inputs as `[name, value]` pairs.",
+	),
 	SelectUiRequest: {
 		type: UI,
 		id: "string",
@@ -197,6 +267,17 @@ export const frameDefs = {
 		{ type: UI, id: "string", method: "'ask'", questions: "AskQuestion[]", "timeout?": "number.integer" },
 		"Every question of one `ask` tool call; sent only after `set_ask_dialog` enables it.",
 	),
+	FormUiRequest: doc(
+		{
+			type: UI,
+			id: "string",
+			method: "'form'",
+			form: "HtmlForm",
+			questions: doc("Record<string, string>", "What each named field asks, keyed by field name."),
+			"timeout?": "number.integer",
+		},
+		"One `ask` tool call as a parsed form; sent only after `set_ask_dialog` enables it.",
+	),
 	CancelUiRequest: doc(
 		{ type: UI, id: "string", method: "'cancel'", targetId: "string" },
 		"Close the dialog opened by request `targetId`; a later answer to it is ignored.",
@@ -234,7 +315,7 @@ export const frameDefs = {
 		"instructions?": "string",
 	},
 	ExtensionUiRequest: doc(
-		"SelectUiRequest | ConfirmUiRequest | InputUiRequest | EditorUiRequest | AskUiRequest | CancelUiRequest | NotifyUiRequest | SetStatusUiRequest | SetWidgetUiRequest | SetTitleUiRequest | SetEditorTextUiRequest | OpenUrlUiRequest",
+		"SelectUiRequest | ConfirmUiRequest | InputUiRequest | EditorUiRequest | AskUiRequest | FormUiRequest | CancelUiRequest | NotifyUiRequest | SetStatusUiRequest | SetWidgetUiRequest | SetTitleUiRequest | SetEditorTextUiRequest | OpenUrlUiRequest",
 		"Extension UI request, discriminated by `method`.",
 	),
 	AskAnswer: doc(
@@ -248,6 +329,10 @@ export const frameDefs = {
 			),
 		},
 		"Answer to one `ask` question: exact option labels, plus optional free text.",
+	),
+	FormValue: doc(
+		"string | number | string[]",
+		"One control's answer: its text, a number for non-empty `number`/`range` inputs, or the chosen values of a checkbox group or multi-select.",
 	),
 	ValueUiResponse: doc(
 		{ type: "'extension_ui_response'", id: "string", value: "string" },
@@ -267,10 +352,22 @@ export const frameDefs = {
 	),
 	ChatUiResponse: doc(
 		{ type: "'extension_ui_response'", id: "string", chat: "true" },
-		'Leaves an `ask` request unanswered: the user chose "Chat about this" instead.',
+		'Leaves an `ask` or `form` request unanswered: the user chose "Chat about this" instead.',
+	),
+	FormDataUiResponse: doc(
+		{
+			type: "'extension_ui_response'",
+			id: "string",
+			data: doc("Record<string, FormValue>", "Each answered control's value, keyed by its `name`."),
+			"notes?": doc(
+				"Record<string, string>",
+				"Free-text remarks beside the answers, keyed by field name; blank ones and ones on unanswered fields are dropped.",
+			),
+		},
+		"Answers a `form` request. A control left unanswered is absent; hidden inputs are not sent back.",
 	),
 	ExtensionUiResponse: doc(
-		"ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse | ChatUiResponse",
+		"ValueUiResponse | ConfirmUiResponse | CancelUiResponse | AnswersUiResponse | ChatUiResponse | FormDataUiResponse",
 		"Host reply to an extension UI request; variants share `type` and differ by their payload key.",
 	),
 
