@@ -40,7 +40,13 @@ import { theme } from "@oh-my-pi/pi-tui/theme";
 import type { AskToolDetails } from "@oh-my-pi/pi-tui/tools/ask";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { isRecord, logger, prompt, untilAborted } from "@oh-my-pi/pi-utils";
-import type { ExtensionUIContext, ExtensionUIDialogOptions, ExtensionUISelectItem } from "../extensibility/extensions";
+import type {
+	ExtensionFormDialogChatResult,
+	ExtensionFormDialogResult,
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	ExtensionUISelectItem,
+} from "../extensibility/extensions";
 import { sessionLocalProtocolOptions } from "../internal-urls/context";
 import { askTimeoutMs, cfgAskNotify } from "../modes/settings";
 import askDescription from "../prompts/tools/ask.md" with { type: "text" };
@@ -58,6 +64,9 @@ const HEADLESS_FORK_ASK_ERROR = prompt.render(askHeadlessForkMessage);
 
 const NO_NAMED_CONTROLS_ERROR =
 	"Error: the form has no named controls. Put at least one <input>, <select> or <textarea> with a `name` attribute inside the <form>.";
+
+/** Opens the result when the user left the form to talk the questions over instead. */
+const CHAT_REDIRECT_TEXT = "User chose to chat about this instead of answering.";
 
 // Window after the timeout deadline within which an `undefined` answer is
 // attributed to a UI-enforced timeout (for surfaces that close the dialog at
@@ -491,7 +500,7 @@ export class AskTool implements AgentTool<typeof askSchema, AskToolDetails> {
 			vocalizer.speak(named.map(field => questions.get(field) ?? field.name).join("\n"));
 		}
 
-		let answered: { data: HtmlFormData; notes?: OptionNote[]; timedOut?: boolean } | undefined;
+		let answered: ExtensionFormDialogResult | ExtensionFormDialogChatResult | undefined;
 		try {
 			if (extensionUi.formDialog) {
 				const formDialog = extensionUi.formDialog.bind(extensionUi);
@@ -506,6 +515,15 @@ export class AskTool implements AgentTool<typeof askSchema, AskToolDetails> {
 			throw error;
 		}
 		if (!answered) return cancelAsk();
+		if ("kind" in answered) {
+			// The user is about to say it in the conversation: end the call with what was asked, so the
+			// transcript keeps the questions their next message answers.
+			const asked = named.map(field => questions.get(field) ?? field.name);
+			return {
+				content: [{ type: "text", text: `${CHAT_REDIRECT_TEXT}\n\nQuestions asked:\n${asked.join("\n")}` }],
+				details: { answers: [], chatRedirect: true },
+			};
+		}
 
 		const notes = answered.notes?.length ? answered.notes : undefined;
 		// Each note numbers its markers from 1; shift them so `[Image #N]` indexes all result images.

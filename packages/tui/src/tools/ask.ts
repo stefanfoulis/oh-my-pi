@@ -35,6 +35,8 @@ export interface AskToolDetails {
 	notes?: OptionNote[];
 	/** The deadline submitted the form's current values instead of the user. */
 	timedOut?: boolean;
+	/** The user left the form to talk the questions over instead of answering; `answers` is empty. */
+	chatRedirect?: boolean;
 }
 
 // =============================================================================
@@ -47,6 +49,7 @@ interface AskRenderArgs {
 }
 
 const TIMED_OUT_NOTE = "auto-selected after timeout — not a user choice";
+const CHAT_REDIRECT_NOTE = "chose to chat about this instead of answering";
 const NO_ANSWER = "(no answer)";
 
 /**
@@ -258,6 +261,12 @@ function describeAskResult(result: ToolRenderResult<AskToolDetails>, args: AskRe
 	const answers = detailsAnswers(result.details);
 	const notes = detailsNotes(result.details);
 	const form = argsForm(args);
+	if (result.details?.chatRedirect === true) {
+		return {
+			tool: askHead(namedQuestions(form)[0]),
+			body: [text([span(CHAT_REDIRECT_NOTE, "muted")], { wrap: "word", role: "omp.tool.notice" })],
+		};
+	}
 	if (!answers) {
 		const fallback = clean(resultText(result));
 		return {
@@ -316,6 +325,13 @@ export const askToolRenderer = {
 		args?: AskRenderArgs,
 	): Component {
 		const answers = detailsAnswers(result.details);
+		if (result.details?.chatRedirect === true) {
+			const header = renderStatusLine(
+				{ iconOverride: uiTheme.styledSymbol("tool.ask", "accent"), title: "Ask" },
+				uiTheme,
+			);
+			return new Text(`${header}\n${uiTheme.fg("dim", CHAT_REDIRECT_NOTE)}`, 0, 0);
+		}
 		if (!answers) {
 			const txt = result.content[0];
 			const fallback = txt?.type === "text" && txt.text ? clean(txt.text) : "";

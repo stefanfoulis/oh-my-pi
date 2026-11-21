@@ -20,6 +20,7 @@
 - Host tool adapters can identify the agent and active model role behind each tool call without inferring roles from resolved model IDs ([ompweb-dev/oh-my-pi#62](https://github.com/ompweb-dev/oh-my-pi/pull/62))
 - Added a navigable `/skills diagnostics` panel and shared RPC workflow for consent-gated AI relationship analysis, with retained per-skill results, cancellation, cited evidence, and separately confirmed content-bound choices that affect OMP only. `omp plugin doctor --analyze` offers the same analyzer for plugins and extensions ([#14458](https://github.com/can1357/oh-my-pi/pull/14458) by [@andrebrait](https://github.com/andrebrait)).
 - Added `--fork-at <entryId>` beside `--fork`: the new session holds the source transcript only up to that entry (same cut as an in-session entry fork, extended through the tool results the source recorded). The source file is only read, so a host can fork a session at any message while its own process keeps running.
+- A host's form dialog (`ui.formDialog`) can answer `{ kind: "chat" }` as the ask dialog already can: the `ask` tool then ends its call with the questions it asked and leaves the answer to the conversation, instead of reading the reply as an empty submission.
 
 ### Changed
 

@@ -200,6 +200,15 @@ export interface ExtensionFormDialogResult {
 	timedOut?: boolean;
 }
 
+/**
+ * The user left a {@link ExtensionUIContext.formDialog} to talk its questions over instead of
+ * answering them. Same answer an `askDialog` gives for that choice; the caller decides what it
+ * means — the `ask` tool ends the call and leaves the conversation to the user.
+ */
+export interface ExtensionFormDialogChatResult {
+	kind: "chat";
+}
+
 export function getExtensionUISelectOptionLabel(option: ExtensionUISelectItem): string {
 	return typeof option === "string" ? option : option.label;
 }
@@ -365,11 +374,15 @@ export interface ExtensionUIContext {
 
 	/**
 	 * Show an HTML `<form>` (see `@oh-my-pi/pi-tui/html-form/parse`) as an interactive form and
-	 * resolve its data on submit, `undefined` on cancel. With `timeout`, the form's current values
-	 * submit when it elapses (`timedOut: true`); input resets the countdown. Absent on hosts that
-	 * cannot draw a form; callers then fall back to field-by-field `select`/`input`/`editor`.
+	 * resolve its data on submit, `{kind:"chat"}` when the user would rather discuss the questions,
+	 * `undefined` on cancel. With `timeout`, the form's current values submit when it elapses
+	 * (`timedOut: true`); input resets the countdown. Absent on hosts that cannot draw a form;
+	 * callers then fall back to field-by-field `select`/`input`/`editor`.
 	 */
-	formDialog?(html: string, dialogOptions?: ExtensionUIDialogOptions): Promise<ExtensionFormDialogResult | undefined>;
+	formDialog?(
+		html: string,
+		dialogOptions?: ExtensionUIDialogOptions,
+	): Promise<ExtensionFormDialogResult | ExtensionFormDialogChatResult | undefined>;
 
 	/**
 	 * Show a tool-approval prompt; anything but an explicit approval is `deny`, `session` only when
