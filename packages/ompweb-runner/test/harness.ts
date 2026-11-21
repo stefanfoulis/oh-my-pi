@@ -175,9 +175,17 @@ export interface TestSession {
 /**
  * A real `AgentSession` from the runner's factory (so it connects to the host), in memory, on a
  * mock model (`mock/mock-model`) that replies with `responses` in order.
+ *
+ * `persist` gives the session a session file under its temporary directory instead, for commands
+ * that read or write transcript files.
  */
 export async function createTestSession(
-	options: { responses?: MockResponse[]; toolNames?: string[]; ui?: Partial<ExtensionUIContext> } = {},
+	options: {
+		responses?: MockResponse[];
+		toolNames?: string[];
+		ui?: Partial<ExtensionUIContext>;
+		persist?: boolean;
+	} = {},
 ): Promise<TestSession> {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ompweb-runner-session-"));
 	const authStorage = new AuthStorage(new SqliteAuthCredentialStore(new Database(":memory:")));
@@ -189,7 +197,9 @@ export async function createTestSession(
 		agentDir: dir,
 		modelRegistry,
 		model: mock,
-		sessionManager: SessionManager.inMemory(dir),
+		sessionManager: options.persist
+			? SessionManager.create(dir, path.join(dir, "sessions"))
+			: SessionManager.inMemory(dir),
 		settings: Settings.isolated({
 			"compaction.enabled": false,
 			"retry.enabled": false,

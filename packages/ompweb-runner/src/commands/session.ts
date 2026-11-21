@@ -4,8 +4,8 @@
  * Unsolicited frame (see {@link watchSessionIdentity}):
  *   omp → host  {t:"session", sessionId, sessionFile, cwd}   the session now writes to another file
  *
- * Errors carry a `code` (`session_busy`, `entry_not_found`, `unknown_since`, `stale_cursor`,
- * `ask_reanswer_unsupported`) as a `CommandError`.
+ * Errors carry a `code` (`session_busy`, `entry_not_found`, `no_session_file`, `unknown_since`,
+ * `stale_cursor`, `ask_reanswer_unsupported`) as a `CommandError`.
  */
 import * as path from "node:path";
 import type { Model } from "@oh-my-pi/pi-ai";
@@ -15,6 +15,7 @@ import {
 	findMostRecentNonEmptySession,
 	findRecentSessionContinuation,
 } from "@oh-my-pi/pi-coding-agent/session/session-listing";
+import { ForkEntryNotFoundError, SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { probeSessionLeases } from "@oh-my-pi/pi-coding-agent/session/session-storage";
 import { isRecord } from "@oh-my-pi/pi-utils";
 import { afterSessionChange } from "../events";
@@ -289,6 +290,44 @@ export const sessionCommands: CommandTable = {
 		return changeSession(ctx, sequence, async () => ({
 			cancelled: !(await session.fork(entryId, { requireIdle: true }).catch(rethrowBusy)),
 		}));
+	},
+	/**
+	 * Write a new session file holding this session's transcript up to `entryId`, and leave this
+	 * session on its own file. The cut is read from the file instead of the live transcript, so it
+	 * is allowed mid-turn: tool calls the source has not answered on disk yet stay out of the fork
+	 * (it cannot produce their results), and nothing here switches sessions or touches a run.
+	 */
+	async fork_at(ctx, args) {
+		const { session } = ctx;
+		const { sessionManager } = session;
+		const entryId = requiredString("fork_at", args, "entryId");
+		const source = session.sessionFile;
+		if (source === undefined) throw new CommandError("This session is not persisted", "no_session_file");
+		// Entries this session has only buffered are not in the file the cut reads.
+		await sessionManager.flush();
+		let fork: SessionManager;
+		try {
+			fork = await SessionManager.forkFrom(
+				source,
+				sessionManager.getCwd(),
+				sessionManager.getSessionDir(),
+				undefined,
+				{
+					// The fork is the host's to open; this session stays the terminal's current one.
+					suppressBreadcrumb: true,
+					repairInterruptedTail: true,
+					leafEntryId: entryId,
+				},
+			);
+		} catch (err) {
+			if (err instanceof ForkEntryNotFoundError) throw new CommandError(err.message, "entry_not_found");
+			throw err;
+		}
+		const sessionFile = fork.getSessionFile();
+		// Hand the file over unowned: the fork is opened by another process, and an unreleased claim
+		// would report it as held by this one.
+		await fork.close();
+		return { sessionId: fork.getSessionId(), sessionFile };
 	},
 	async branch(ctx, args) {
 		const sequence = prompting(ctx).accept();
