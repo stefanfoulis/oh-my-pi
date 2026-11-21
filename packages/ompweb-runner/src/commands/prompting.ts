@@ -12,6 +12,7 @@
  *   {t:"session_info_update", title, sessionId} a builtin renamed the session
  *   {t:"config_update", model, thinkingLevel}   a builtin changed model or thinking level
  */
+import { AgentBusyError } from "@oh-my-pi/pi-agent-core";
 import {
 	clearPluginRootsAndCaches,
 	resolveActiveProjectRegistryPath,
@@ -168,8 +169,22 @@ function readInput(ctx: CommandContext, op: UserInput["op"], args: Record<string
 	return { op, id: ctx.id, message: args.message, images, streamingBehavior, sequence, claim };
 }
 
-const onPromptError = (ctx: CommandContext, input: UserInput) => (error: Error) =>
+const onPromptError = (ctx: CommandContext, input: { op: string; id: number | undefined }) => (error: Error) =>
 	ctx.send({ t: "prompt_error", id: input.id, command: input.op, error: error.message });
+
+/**
+ * What `continue` sends. The advisor notes it refers to are already in the agent's context as
+ * cards, so the directive only says how to treat them; it is never shown as the user's own words.
+ */
+const ADVISOR_CONTINUE_DIRECTIVE = `<system-notice>
+The user asks you to act on the advisor notes above.
+
+Advisor notes are advice, not orders: weigh each one on its merits.
+Address what is valid; state in one line why you set any aside.
+Then resume most recent intent; complete unfinished work.
+NEVER ask whether to proceed; continue.
+</system-notice>
+`;
 
 /**
  * RPC's `dispatchOrderedUserInput`: input hooks, then skills and builtins (`prompt` only), then the
@@ -362,6 +377,47 @@ export const promptingCommands: CommandTable = {
 	},
 	async follow_up(ctx, args) {
 		await dispatchInput(ctx, readInput(ctx, "follow_up", args));
+		return undefined;
+	},
+	/**
+	 * Resume the agent on the advisor notes in its context, without a user message: the directive is
+	 * a synthetic developer message, so a host renders it as a resume marker rather than a bubble.
+	 * Idle it starts a turn and reports like `prompt`; while streaming it queues as a synthetic
+	 * follow-up, which runs after the live turn ends instead of steering or aborting it.
+	 * `reason` is the host's label for the resume and is only logged.
+	 */
+	async continue(ctx, args) {
+		const { session } = ctx;
+		const reason = args.reason;
+		if (reason !== undefined && typeof reason !== "string") throw new Error("continue: reason must be a string");
+		const state = prompting(ctx);
+		const ticket = state.results.begin(ctx.id);
+		logger.debug("ompweb: continue", { reason, streaming: session.isStreaming });
+		await reportPromptResult(
+			ticket,
+			state.results,
+			onPromptError(ctx, { op: "continue", id: ctx.id }),
+			async onPromptAdmitted => {
+				if (!session.isStreaming) {
+					try {
+						return await session.prompt(ADVISOR_CONTINUE_DIRECTIVE, {
+							synthetic: true,
+							userInitiated: true,
+							expandPromptTemplates: false,
+							onPromptAdmitted,
+						});
+					} catch (error) {
+						// A turn started between the check and the dispatch: queue behind it.
+						if (!(error instanceof AgentBusyError)) throw error;
+					}
+				}
+				await session.followUp(ADVISOR_CONTINUE_DIRECTIVE, undefined, {
+					synthetic: true,
+					expandPromptTemplates: false,
+				});
+				return true;
+			},
+		);
 		return undefined;
 	},
 	async remove_queued_message({ session }, args) {
