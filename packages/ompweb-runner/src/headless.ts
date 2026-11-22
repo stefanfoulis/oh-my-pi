@@ -23,6 +23,7 @@ import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 import { logger } from "@oh-my-pi/pi-utils";
 import { type ByteReader, type CustomFactory, HostChannel } from "./channel";
+import { inlineFormImages } from "./form-images";
 
 // shortcut: custom components render at a fixed width; take the browser's width when a host sends one.
 const CUSTOM_COLUMNS = 100;
@@ -138,7 +139,7 @@ function showCustom<T>(factory: CustomFactory<T>, signal: AbortSignal | undefine
 }
 
 /** The UI of a headless omp: dialogs go to the host alone, presentation calls become frames. */
-function hostUi(channel: HostChannel): ExtensionUIContext {
+function hostUi(channel: HostChannel, session: AgentSession): ExtensionUIContext {
 	const { presenter } = channel;
 	return {
 		...presenter,
@@ -149,7 +150,13 @@ function hostUi(channel: HostChannel): ExtensionUIContext {
 		editor: (...args) => channel.dialog("editor", args, () => undefined),
 		askDialog: (...args) =>
 			channel.dialog("askDialog", args, timedOut => (timedOut ? timedOutAskDialogResult(args[0]) : undefined)),
-		formDialog: (...args) => channel.dialog("formDialog", args, () => undefined),
+		formDialog: async (html, dialogOptions) => {
+			const inlined = await inlineFormImages(html, {
+				cwd: session.sessionManager.getCwd(),
+				signal: dialogOptions?.signal,
+			});
+			return channel.dialog("formDialog", [inlined, dialogOptions], () => undefined);
+		},
 		approve: (...args) => channel.dialog("approve", args, () => "deny" as const),
 		custom: (factory, options) => channel.custom(factory, mirrored => showCustom(mirrored, options?.signal)),
 		// There is no local editor to paste into.
@@ -181,7 +188,7 @@ export async function runHeadless(session: AgentSession, host: SessionHostContex
 	// Terminal notifications write BEL/OSC to the terminal, which is the channel here.
 	process.env.PI_NOTIFICATIONS = "off";
 	const channel = HostChannel.stdio(session, host.subagentEventBus, writeChannel);
-	const ui = hostUi(channel);
+	const ui = hostUi(channel, session);
 	host.setToolUIContext(ui, true);
 	// Read now: `session_start` handlers may wait on a dialog only the host can answer.
 	const reading = channel.read(stdin);
